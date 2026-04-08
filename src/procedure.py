@@ -4,6 +4,26 @@ import utils
 
 
 
+_cached_neg_arrays = None
+_cached_neg_key = None
+
+
+def _get_neg_arrays(validation_data, users_with_validation, n_items):
+    """Cache negative item arrays — expensive to build, reuse across epochs."""
+    global _cached_neg_arrays, _cached_neg_key
+    key = (id(validation_data), n_items)
+    if _cached_neg_key == key and _cached_neg_arrays is not None:
+        return _cached_neg_arrays
+    neg_arrays = {}
+    all_items = np.arange(n_items, dtype=np.int32)
+    for u in users_with_validation:
+        pos_set = set(validation_data[u])
+        neg_arrays[u] = np.array([i for i in all_items if i not in pos_set], dtype=np.int32)
+    _cached_neg_arrays = neg_arrays
+    _cached_neg_key = key
+    return neg_arrays
+
+
 def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000, n_items=None, n_neg=1):
     model.train()
     users_with_validation = [u for u, items in validation_data.items() if len(items) > 0]
@@ -13,11 +33,7 @@ def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000, n_ite
     if n_items is None:
         n_items = model.n_items
 
-    # Pre-compute negative item arrays per user (like SimGCF)
-    user_neg_arrays = {}
-    for u in users_with_validation:
-        pos_set = set(validation_data[u])
-        user_neg_arrays[u] = np.array(list(set(range(n_items)) - pos_set), dtype=np.int32)
+    user_neg_arrays = _get_neg_arrays(validation_data, users_with_validation, n_items)
 
     total_loss = 0.0
     optimizer.zero_grad()
