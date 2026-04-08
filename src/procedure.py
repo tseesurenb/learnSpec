@@ -4,27 +4,33 @@ import utils
 
 
 
-_cached_neg_arrays = None
-_cached_neg_key = None
+def _get_neg_arrays(validation_data, users_with_validation, n_items, cache_dir=None, split_seed=42, split_ratio=0.7):
+    """Build or load cached negative item arrays per user."""
+    import os, pickle
 
+    if cache_dir:
+        neg_cache_file = os.path.join(cache_dir, f'neg_arrays_seed{split_seed}_ratio{int(split_ratio*100)}_n{n_items}.pkl')
+        if os.path.exists(neg_cache_file):
+            with open(neg_cache_file, 'rb') as f:
+                return pickle.load(f)
 
-def _get_neg_arrays(validation_data, users_with_validation, n_items):
-    """Cache negative item arrays — expensive to build, reuse across epochs."""
-    global _cached_neg_arrays, _cached_neg_key
-    key = (id(validation_data), n_items)
-    if _cached_neg_key == key and _cached_neg_arrays is not None:
-        return _cached_neg_arrays
     neg_arrays = {}
-    all_items = np.arange(n_items, dtype=np.int32)
+    all_items_set = set(range(n_items))
     for u in users_with_validation:
         pos_set = set(validation_data[u])
-        neg_arrays[u] = np.array([i for i in all_items if i not in pos_set], dtype=np.int32)
-    _cached_neg_arrays = neg_arrays
-    _cached_neg_key = key
+        neg_arrays[u] = np.array(sorted(all_items_set - pos_set), dtype=np.int32)
+
+    if cache_dir:
+        os.makedirs(cache_dir, exist_ok=True)
+        with open(neg_cache_file, 'wb') as f:
+            pickle.dump(neg_arrays, f)
+        print(f"    Cached negative arrays: {os.path.basename(neg_cache_file)}")
+
     return neg_arrays
 
 
-def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000, n_items=None, n_neg=1):
+def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000, n_items=None, n_neg=1,
+                       cache_dir=None, split_seed=42, split_ratio=0.7):
     model.train()
     users_with_validation = [u for u, items in validation_data.items() if len(items) > 0]
     if len(users_with_validation) == 0:
@@ -33,7 +39,8 @@ def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000, n_ite
     if n_items is None:
         n_items = model.n_items
 
-    user_neg_arrays = _get_neg_arrays(validation_data, users_with_validation, n_items)
+    user_neg_arrays = _get_neg_arrays(validation_data, users_with_validation, n_items,
+                                      cache_dir=cache_dir, split_seed=split_seed, split_ratio=split_ratio)
 
     total_loss = 0.0
     optimizer.zero_grad()

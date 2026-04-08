@@ -67,7 +67,8 @@ def main(config_override=None):
 
     for epoch in range(config['epochs']):
         model.train()
-        loss = pr.BPR_train_spectral(validation_data, model, optimizer, batch_size=config['batch_size'], n_neg=config.get('n_neg', 1))
+        loss = pr.BPR_train_spectral(validation_data, model, optimizer, batch_size=config['batch_size'], n_neg=config.get('n_neg', 1),
+                                      cache_dir=model.cache_dir, split_seed=SPLIT_SEED, split_ratio=split_ratio)
 
         if (epoch + 1) % eval_every != 0 and epoch > 0:
             print(f"\rEpoch {epoch+1:0{ew}d}/{config['epochs']} | Loss: {loss:.4f}    ", end='', flush=True)
