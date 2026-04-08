@@ -1,0 +1,16 @@
+{"time":"2025-11-25T07:45:53.30916+11:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"/Users/tseesuren/Desktop/act_DySimGCF/src_v3/SimGCF/wandb/run-20251125_074553-5v8dvw4i/logs/debug-core.log"}
+{"time":"2025-11-25T07:45:53.639289+11:00","level":"INFO","msg":"created new stream","id":"5v8dvw4i"}
+{"time":"2025-11-25T07:45:53.639475+11:00","level":"INFO","msg":"stream: started","id":"5v8dvw4i"}
+{"time":"2025-11-25T07:45:53.639479+11:00","level":"INFO","msg":"writer: Do: started","stream_id":"5v8dvw4i"}
+{"time":"2025-11-25T07:45:53.639497+11:00","level":"INFO","msg":"sender: started","stream_id":"5v8dvw4i"}
+{"time":"2025-11-25T07:45:53.639522+11:00","level":"INFO","msg":"handler: started","stream_id":"5v8dvw4i"}
+{"time":"2025-11-25T07:45:53.995385+11:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-11-25T08:22:04.809475+11:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-11-25T08:22:04.809659+11:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-11-25T08:22:05.820501+11:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"uploading wandb-summary.json","runtime_seconds":0.477048584,"progress":"530B/530B"},{"desc":"uploading config.yaml","runtime_seconds":0.205737084,"progress":"1.2KB/1.2KB"}],"total_operations":2}}
+{"time":"2025-11-25T08:22:05.952403+11:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-11-25T08:22:06.298226+11:00","level":"INFO","msg":"stream: closing","id":"5v8dvw4i"}
+{"time":"2025-11-25T08:22:06.298275+11:00","level":"INFO","msg":"handler: closed","stream_id":"5v8dvw4i"}
+{"time":"2025-11-25T08:22:06.298297+11:00","level":"INFO","msg":"sender: closed","stream_id":"5v8dvw4i"}
+{"time":"2025-11-25T08:22:06.298454+11:00","level":"INFO","msg":"writer: Close: closed","stream_id":"5v8dvw4i"}
+{"time":"2025-11-25T08:22:06.298502+11:00","level":"INFO","msg":"stream: closed","id":"5v8dvw4i"}

@@ -3,11 +3,21 @@ import numpy as np
 import utils
 
 
-def MSE_train_spectral(validation_data, model, optimizer, batch_size=1000):
+
+def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000, n_items=None, n_neg=1):
     model.train()
     users_with_validation = [u for u, items in validation_data.items() if len(items) > 0]
     if len(users_with_validation) == 0:
         return 0.0
+
+    if n_items is None:
+        n_items = model.n_items
+
+    # Pre-compute negative item arrays per user (like SimGCF)
+    user_neg_arrays = {}
+    for u in users_with_validation:
+        pos_set = set(validation_data[u])
+        user_neg_arrays[u] = np.array(list(set(range(n_items)) - pos_set), dtype=np.int32)
 
     total_loss = 0.0
     optimizer.zero_grad()
@@ -16,40 +26,47 @@ def MSE_train_spectral(validation_data, model, optimizer, batch_size=1000):
         batch_end = min(batch_start + batch_size, len(users_with_validation))
         batch_users = users_with_validation[batch_start:batch_end]
 
-        batch_val_items = set()
-        user_val_mappings = {}
-        for i, user_id in enumerate(batch_users):
+        # Sample one positive and n_neg negatives per user
+        b_users, b_pos, b_neg_list = [], [], []
+        for user_id in batch_users:
             val_items = validation_data[user_id]
-            if len(val_items) > 0:
-                user_val_mappings[i] = val_items
-                batch_val_items.update(val_items)
+            if len(val_items) == 0:
+                continue
+            pos_item = val_items[np.random.randint(len(val_items))]
+            neg_items = np.random.choice(user_neg_arrays[user_id], size=n_neg, replace=True)
+            b_users.append(user_id)
+            b_pos.append(pos_item)
+            b_neg_list.append(neg_items.tolist() if n_neg > 1 else [int(neg_items[0])])
 
-        if not batch_val_items:
+        if not b_users:
             continue
 
-        batch_val_items = sorted(list(batch_val_items))
-        val_item_to_idx = {item: idx for idx, item in enumerate(batch_val_items)}
+        # Collect all unique target items
+        all_items = set(b_pos)
+        for negs in b_neg_list:
+            all_items.update(negs)
+        target_items = sorted(all_items)
+        item_to_idx = {item: idx for idx, item in enumerate(target_items)}
 
-        users = torch.as_tensor(batch_users, dtype=torch.long, device=model.device)
-        predicted_ratings = model.forward_selective(users, batch_val_items)
+        users = torch.as_tensor(b_users, dtype=torch.long, device=model.device)
+        predicted = model.forward_selective(users, target_items)
+        bs = len(b_users)
 
-        mse_loss = 0
-        total_val_interactions = 0
-        for i, user_id in enumerate(batch_users):
-            if i in user_val_mappings:
-                val_items = user_val_mappings[i]
-                val_positions = [val_item_to_idx[item] for item in val_items]
-                user_val_predictions = predicted_ratings[i, val_positions]
-                mse_loss += torch.mean((user_val_predictions - 1.0) ** 2)
-                total_val_interactions += len(val_items)
+        pos_idx = [item_to_idx[p] for p in b_pos]
+        pos_scores = predicted[range(bs), pos_idx]
 
-        if total_val_interactions > 0:
-            mse_loss = mse_loss / len([u for u in batch_users if len(validation_data[u]) > 0])
+        if n_neg == 1:
+            neg_idx = [item_to_idx[b_neg_list[i][0]] for i in range(bs)]
+            neg_scores = predicted[range(bs), neg_idx]
+            bpr_loss = torch.nn.functional.softplus(neg_scores - pos_scores).mean()
         else:
-            mse_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
+            neg_idx = [[item_to_idx[n] for n in negs] for negs in b_neg_list]
+            neg_idx_t = torch.tensor(neg_idx, dtype=torch.long, device=model.device)
+            neg_scores = torch.gather(predicted, 1, neg_idx_t)
+            bpr_loss = torch.nn.functional.softplus(neg_scores - pos_scores.unsqueeze(1)).mean()
 
-        batch_weight = len(batch_users) / len(users_with_validation)
-        scaled_loss = mse_loss * batch_weight
+        batch_weight = len(b_users) / len(users_with_validation)
+        scaled_loss = bpr_loss * batch_weight
         total_loss += scaled_loss.item()
         scaled_loss.backward()
 

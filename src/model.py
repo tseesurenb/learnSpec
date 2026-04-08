@@ -17,6 +17,8 @@ class LearnSpecCF(nn.Module):
         self.dataset = config.get('dataset', 'unknown')
         self.verbose = verbose
         self.view = config.get('view', 'ui')
+        if (config.get('cross', False) or config.get('svd', False)) and self.view != 'ui':
+            self.view = 'ui'  # cross/svd views need both eigendecompositions
 
         if sp.issparse(adj_mat):
             self.adj_mat = adj_mat.tocsr()
@@ -37,12 +39,17 @@ class LearnSpecCF(nn.Module):
 
         f_order = config.get('f_order', 8)
         f_init = config.get('f_init', 'uniform')
+        self.use_cross = config.get('cross', False)
+        self.use_svd = config.get('svd', False)
+
         self.user_filter = self._create_filter(f_order, f_init, 'u') if 'u' in self.view else None
         self.item_filter = self._create_filter(f_order, f_init, 'i') if 'i' in self.view else None
 
         fusion_weights = []
         if 'u' in self.view: fusion_weights.append(1.0)
         if 'i' in self.view: fusion_weights.append(1.0)
+        if self.use_cross: fusion_weights.append(1.0)
+        if self.use_svd: fusion_weights.append(1.0)
         if len(fusion_weights) > 1:
             self.fusion_logits = nn.Parameter(torch.tensor(fusion_weights, dtype=torch.float32, device=self.device))
 
@@ -52,6 +59,22 @@ class LearnSpecCF(nn.Module):
 
         self._precompute_spectral_features()
         self._precompute_spectral_projections()
+
+        if self.use_cross and hasattr(self, 'user_eigenvecs') and hasattr(self, 'item_eigenvecs'):
+            self.cross_a = nn.Parameter(torch.zeros(self.u_eigen, device=self.device))
+            self.cross_b = nn.Parameter(torch.zeros(self.i_eigen, device=self.device))
+
+        if self.use_svd and hasattr(self, 'user_eigenvecs') and hasattr(self, 'item_eigenvecs'):
+            svd_k_requested = config.get('svd_k', 50)
+            self.svd_k = min(svd_k_requested, self.u_eigen, self.i_eigen)
+            # Singular values = sqrt(eigenvalues); eigenvals are σ² from SVD
+            svd_singular_vals = torch.sqrt(self.user_eigenvals[:self.svd_k].clamp(min=0))
+            self.register_buffer('svd_singular_vals', svd_singular_vals)
+            svd_config = self.config.copy()
+            svd_config['n_eigen'] = self.svd_k
+            self.svd_filter = create_filter(order=f_order, init_type=f_init, config=svd_config)
+            if self.verbose:
+                print(f"    SVD view: k={self.svd_k}, σ range=[{svd_singular_vals[-1]:.4f}, {svd_singular_vals[0]:.4f}]")
 
     def _precompute_spectral_projections(self):
         R = self.adj_mat.tocsr()
@@ -79,6 +102,13 @@ class LearnSpecCF(nn.Module):
             if self.verbose:
                 print(f"    Precomputed item spectral projection: R@V {spectral_R.shape}")
 
+        if self.use_cross and hasattr(self, 'user_eigenvecs') and hasattr(self, 'item_eigenvecs'):
+            # U^T @ R @ V = (user_spectral_R) @ V, shape (k_u, k_i)
+            cross_matrix = self.user_spectral_R @ self.item_eigenvecs
+            self.register_buffer('cross_spectral', cross_matrix.contiguous())
+            if self.verbose:
+                print(f"    Precomputed cross-view spectral: U^T@R@V {cross_matrix.shape}")
+
         del R_csr
 
     def _create_filter(self, f_order, init_type, view='u'):
@@ -95,8 +125,9 @@ class LearnSpecCF(nn.Module):
             valid_users = users[user_in_matrix_mask]
             batch_user_vecs = self.user_eigenvecs[valid_users]
 
-            if self.config.get('puf', False):
+            if self.config.get('guf', False):
                 z_u = batch_user_vecs * self.user_eigenvals.unsqueeze(0)
+                z_u = torch.nn.functional.normalize(z_u, dim=1)
                 user_response = self.user_filter(self.user_eigenvals, z_u)  # (batch, k)
                 weighted_vecs = batch_user_vecs * user_response
             else:
@@ -116,8 +147,9 @@ class LearnSpecCF(nn.Module):
         spectral_profiles = self.item_spectral_R[users]
 
         if self.item_filter is not None:
-            if self.config.get('puf', False):
+            if self.config.get('guf', False):
                 z_u = spectral_profiles * self.item_eigenvals.unsqueeze(0)
+                z_u = torch.nn.functional.normalize(z_u, dim=1)
                 item_response = self.item_filter(self.item_eigenvals, z_u)  # (batch, k)
             else:
                 item_response = self.item_filter(self.item_eigenvals)
@@ -129,6 +161,53 @@ class LearnSpecCF(nn.Module):
         if target_items is not None:
             return torch.zeros(len(users), len(target_items), device=self.device)
         return torch.zeros(len(users), self.n_items, device=self.device)
+
+    def get_svd_spectral_filtering(self, users, target_items=None):
+        """SVD view: score(u,:) = U[u,:k] * h(σ) @ V[:,:k]^T"""
+        user_in_matrix_mask = users < self.user_eigenvecs.shape[0]
+        output_size = len(target_items) if target_items is not None else self.n_items
+        svd_filtered = torch.zeros(len(users), output_size, device=self.device)
+
+        if user_in_matrix_mask.any() and hasattr(self, 'svd_filter'):
+            valid_users = users[user_in_matrix_mask]
+            k = self.svd_k
+            batch_user_vecs = self.user_eigenvecs[valid_users, :k]  # (batch, k)
+            svd_response = self.svd_filter(self.svd_singular_vals)  # (k,)
+            weighted = batch_user_vecs * svd_response.unsqueeze(0)  # (batch, k)
+
+            if target_items is not None:
+                result = weighted @ self.item_eigenvecs[target_items, :k].T
+            else:
+                result = weighted @ self.item_eigenvecs[:, :k].T
+
+            svd_filtered[user_in_matrix_mask] = result
+
+        return svd_filtered
+
+    def get_cross_spectral_filtering(self, users, target_items=None):
+        """Cross-view: score(u,:) = [U[u,:] * σ(a)] @ (U^T R V) @ diag(σ(b)) @ V^T"""
+        user_in_matrix_mask = users < self.user_eigenvecs.shape[0]
+        output_size = len(target_items) if target_items is not None else self.n_items
+        cross_filtered = torch.zeros(len(users), output_size, device=self.device)
+
+        if user_in_matrix_mask.any():
+            valid_users = users[user_in_matrix_mask]
+            batch_user_vecs = self.user_eigenvecs[valid_users]  # (batch, k_u)
+            a = torch.sigmoid(self.cross_a)  # (k_u,)
+            b = torch.sigmoid(self.cross_b)  # (k_i,)
+
+            weighted_u = batch_user_vecs * a.unsqueeze(0)  # (batch, k_u)
+            cross = weighted_u @ self.cross_spectral  # (batch, k_i)
+            cross = cross * b.unsqueeze(0)  # (batch, k_i)
+
+            if target_items is not None:
+                result = cross @ self.item_eigenvecs[target_items].T
+            else:
+                result = cross @ self.item_eigenvecs.T
+
+            cross_filtered[user_in_matrix_mask] = result
+
+        return cross_filtered
 
     def _fuse_views(self, view_embeddings):
         if len(view_embeddings) > 1 and hasattr(self, 'fusion_logits'):
@@ -152,6 +231,10 @@ class LearnSpecCF(nn.Module):
             views.append(self.get_user_spectral_filtering(users))
         if 'i' in self.view:
             views.append(self.get_item_spectral_filtering(users))
+        if self.use_cross:
+            views.append(self.get_cross_spectral_filtering(users))
+        if self.use_svd:
+            views.append(self.get_svd_spectral_filtering(users))
         return self._fuse_views(views)
 
     def forward_selective(self, users, target_items):
@@ -169,6 +252,10 @@ class LearnSpecCF(nn.Module):
             views.append(self.get_user_spectral_filtering(users, target_items))
         if 'i' in self.view:
             views.append(self.get_item_spectral_filtering(users, target_items))
+        if self.use_cross:
+            views.append(self.get_cross_spectral_filtering(users, target_items))
+        if self.use_svd:
+            views.append(self.get_svd_spectral_filtering(users, target_items))
         return self._fuse_views(views)
 
     def _precompute_spectral_features(self):
@@ -367,6 +454,21 @@ class LearnSpecCF(nn.Module):
                     'weight_decay': self.decay, 'name': f'{prefix}_filter'
                 })
 
+        if hasattr(self, 'svd_filter'):
+            if hasattr(self.svd_filter, 'get_parameter_groups'):
+                groups = self.svd_filter.get_parameter_groups(self.config)
+                for g in groups:
+                    g['lr'] = self.lr
+                    g['weight_decay'] = self.decay
+                    g['name'] = f"svd_{g.get('name', 'filter')}"
+                param_groups.extend(groups)
+
+        if hasattr(self, 'cross_a'):
+            param_groups.append({
+                'params': [self.cross_a, self.cross_b], 'lr': self.lr,
+                'weight_decay': self.decay, 'name': 'cross_view'
+            })
+
         if hasattr(self, 'fusion_logits'):
             param_groups.append({
                 'params': [self.fusion_logits], 'lr': self.lr,
@@ -381,6 +483,11 @@ class LearnSpecCF(nn.Module):
             snapshot['user_filter'] = deep_copy_state_dict(self.user_filter.state_dict())
         if self.item_filter is not None:
             snapshot['item_filter'] = deep_copy_state_dict(self.item_filter.state_dict())
+        if hasattr(self, 'svd_filter'):
+            snapshot['svd_filter'] = deep_copy_state_dict(self.svd_filter.state_dict())
+        if hasattr(self, 'cross_a'):
+            snapshot['cross_a'] = self.cross_a.data.clone().detach()
+            snapshot['cross_b'] = self.cross_b.data.clone().detach()
         if hasattr(self, 'fusion_logits'):
             snapshot['fusion_logits'] = self.fusion_logits.data.clone().detach()
         return snapshot
@@ -392,6 +499,11 @@ class LearnSpecCF(nn.Module):
             self.user_filter.load_state_dict(snapshot['user_filter'])
         if 'item_filter' in snapshot and self.item_filter is not None:
             self.item_filter.load_state_dict(snapshot['item_filter'])
+        if 'svd_filter' in snapshot and hasattr(self, 'svd_filter'):
+            self.svd_filter.load_state_dict(snapshot['svd_filter'])
+        if 'cross_a' in snapshot and hasattr(self, 'cross_a'):
+            self.cross_a.data.copy_(snapshot['cross_a'])
+            self.cross_b.data.copy_(snapshot['cross_b'])
         if 'fusion_logits' in snapshot and hasattr(self, 'fusion_logits'):
             self.fusion_logits.data.copy_(snapshot['fusion_logits'])
 

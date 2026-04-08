@@ -23,16 +23,22 @@ def parse_args():
     parser.add_argument('--f_poly', type=str, default='bernstein', choices=POLYNOMIAL_BASIS)
     parser.add_argument('--f_dropout', type=float, default=0.0)
     parser.add_argument('--f_act', type=str, default='sigmoid', choices=['sigmoid', 'softplus', 'tanh', 'none'])
+    parser.add_argument('--n_neg', type=int, default=1, help='Number of negative samples per positive for BPR')
     parser.add_argument('--opt', type=str, default='rmsprop', choices=OPTIMIZERS)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--decay', type=float, default=0)
     parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=1024)
-    parser.add_argument('--patience', type=int, default=5)
+    parser.add_argument('--patience', type=int, default=10)
     parser.add_argument('--eval_every', type=int, default=5)
-    parser.add_argument('--puf', action='store_true', default=False, help='Per-user adaptive spectral filter')
+    parser.add_argument('--guf', action='store_true', default=False, help='Group-adaptive spectral filter')
+    parser.add_argument('--n_groups', type=int, default=5, help='Number of user groups for --guf')
+    parser.add_argument('--cross', action='store_true', default=False, help='Cross-view spectral interaction')
+    parser.add_argument('--svd', action='store_true', default=False, help='SVD view: direct spectral filtering on singular values')
+    parser.add_argument('--svd_k', type=int, default=50, help='Number of singular values for SVD view')
     parser.add_argument('--infer', action='store_true', default=False)
     parser.add_argument('--save', action='store_true', default=False)
+    parser.add_argument('--split_ratio', type=float, default=0.7, help='Train/val split ratio for sub-eigenspace learning')
     parser.add_argument('--device', type=str, default='auto', choices=['auto', 'cpu', 'cuda'])
     return parser.parse_args()
 
@@ -55,7 +61,9 @@ def get_config(args):
         'opt': args.opt, 'lr': args.lr, 'decay': args.decay,
         'epochs': args.epochs, 'batch_size': args.batch_size,
         'patience': args.patience, 'eval_every': args.eval_every,
-        'puf': args.puf,
+        'guf': args.guf, 'n_groups': args.n_groups, 'cross': args.cross,
+        'svd': args.svd, 'svd_k': args.svd_k,
+        'split_ratio': args.split_ratio,
         'infer': args.infer, 'save': args.save,
-        'device': device, 'loss': 'mse', 'topks': [20],
+        'device': device, 'n_neg': args.n_neg, 'topks': [20],
     }

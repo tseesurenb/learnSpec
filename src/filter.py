@@ -142,20 +142,25 @@ class DirectFilter(nn.Module):
             return x.numpy(), self.forward().cpu().numpy()
 
 
-class UserAdaptiveFilter(nn.Module):
-    """Per-user adaptive spectral filter: c(u) = W @ z_u + b, then polynomial evaluation."""
+class GroupFilter(nn.Module):
+    """Group-adaptive spectral filter: G group filters mixed by soft user-group assignment."""
 
-    def __init__(self, n_eigen, filter_order=8, init_type='uniform', poly_basis='bernstein', activation='sigmoid'):
+    def __init__(self, n_eigen, n_groups=5, filter_order=8, init_type='uniform', poly_basis='bernstein', activation='sigmoid'):
         super().__init__()
         self.n_eigen = n_eigen
+        self.n_groups = n_groups
         self.filter_order = filter_order
         self.poly_basis = poly_basis
         self.activation = activation
 
-        # Bias acts as global baseline filter
-        self.bias = nn.Parameter(torch.tensor(get_init_coefficients(init_type, filter_order), dtype=torch.float32))
-        # W maps user spectral profile (n_eigen) to polynomial coefficients (K+1)
-        self.W = nn.Parameter(torch.randn(filter_order + 1, n_eigen) * 0.01)
+        # G sets of polynomial coefficients, each initialized differently
+        init_offsets = torch.linspace(-0.5, 0.5, n_groups)
+        base_init = torch.tensor(get_init_coefficients(init_type, filter_order), dtype=torch.float32)
+        group_coeffs = base_init.unsqueeze(0).repeat(n_groups, 1) + init_offsets.unsqueeze(1) * 0.1
+        self.group_coeffs = nn.Parameter(group_coeffs)  # (G, K+1)
+
+        # Assignment matrix: maps spectral profile (n_eigen) to group logits (G)
+        self.V = nn.Parameter(torch.randn(n_groups, n_eigen) * 0.01)
 
         if poly_basis == 'bernstein':
             self.register_buffer('_binomials', precompute_bernstein_binomials(filter_order))
@@ -163,55 +168,50 @@ class UserAdaptiveFilter(nn.Module):
             self._binomials = None
 
         self._cached_eigenvals_id = None
-        self._cached_x_normalized = None
         self._cached_basis = None
 
-    def _get_normalized(self, eigenvals):
+    def _get_basis(self, eigenvals):
         ev_id = eigenvals.data_ptr()
         if self._cached_eigenvals_id != ev_id:
-            self._cached_x_normalized = normalize_eigenvalues_for_basis(eigenvals, self.poly_basis)
-            self._cached_basis = self._precompute_basis(self._cached_x_normalized)
+            x = normalize_eigenvalues_for_basis(eigenvals, self.poly_basis)
+            K = self.filter_order
+            basis = torch.zeros(K + 1, len(x), device=x.device)
+            if self.poly_basis == 'bernstein':
+                for i in range(K + 1):
+                    basis[i] = self._binomials[i] * (x ** i) * ((1 - x) ** (K - i))
+            elif self.poly_basis == 'cheby':
+                basis[0] = torch.ones_like(x)
+                if K >= 1:
+                    basis[1] = x
+                    for i in range(2, K + 1):
+                        basis[i] = 2 * x * basis[i - 1] - basis[i - 2]
+            self._cached_basis = basis
             self._cached_eigenvals_id = ev_id
-        return self._cached_x_normalized, self._cached_basis
-
-    def _precompute_basis(self, x):
-        """Precompute basis functions: (K+1, k) matrix."""
-        K = self.filter_order
-        basis = torch.zeros(K + 1, len(x), device=x.device)
-        if self.poly_basis == 'bernstein':
-            for i in range(K + 1):
-                basis[i] = self._binomials[i] * (x ** i) * ((1 - x) ** (K - i))
-        elif self.poly_basis == 'cheby':
-            basis[0] = torch.ones_like(x)
-            if K >= 1:
-                basis[1] = x
-                for i in range(2, K + 1):
-                    basis[i] = 2 * x * basis[i - 1] - basis[i - 2]
-        return basis
+        return self._cached_basis
 
     def forward(self, eigenvals, user_spectral_embed=None):
         """
         eigenvals: (k,)
-        user_spectral_embed: (batch, k) — user eigenvecs weighted by eigenvals
-        Returns: (batch, k) per-user filter responses, or (k,) global if no embed given
+        user_spectral_embed: (batch, k) — L2-normalized spectral profile
+        Returns: (batch, k) per-group filter responses, or (k,) global if no embed
         """
-        _, basis = self._get_normalized(eigenvals)  # basis: (K+1, k)
+        basis = self._get_basis(eigenvals)  # (K+1, k)
+        # All group filter responses: (G, k)
+        group_responses = apply_activation(self.group_coeffs @ basis, self.activation)
 
         if user_spectral_embed is None:
-            # Global mode: just use bias
-            response = self.bias @ basis  # (k,)
-            return apply_activation(response, self.activation)
+            # Global mode: equal-weight average of all groups
+            return group_responses.mean(dim=0)
 
-        # Per-user coefficients: (batch, K+1)
-        coeffs = user_spectral_embed @ self.W.T + self.bias.unsqueeze(0)
-        # Per-user filter response: (batch, k)
-        response = coeffs @ basis
-        return apply_activation(response, self.activation)
+        # Soft assignment: (batch, G)
+        group_weights = torch.softmax(user_spectral_embed @ self.V.T, dim=1)
+        # Weighted mix of group responses: (batch, k)
+        return group_weights @ group_responses
 
     def get_parameter_groups(self, config):
         return [
-            {'params': [self.bias], 'name': 'filter_bias'},
-            {'params': [self.W], 'name': 'filter_adapt_W'},
+            {'params': [self.group_coeffs], 'name': 'group_filter_coeffs'},
+            {'params': [self.V], 'name': 'group_assign_V'},
         ]
 
     def get_filter_values(self, n_points=100):
@@ -259,10 +259,10 @@ def create_filter(order=8, init_type='uniform', config=None):
     activation = config.get('f_act', 'sigmoid') if config else 'sigmoid'
     dropout = config.get('f_dropout', 0.0) if config else 0.0
 
-    if config.get('puf', False):
-        # UserAdaptiveFilter uses polynomial basis; map 'adaptive'/'direct' to 'bernstein'
-        puf_basis = poly_basis if poly_basis in ('bernstein', 'cheby') else 'bernstein'
-        return UserAdaptiveFilter(n_eigen=config.get('n_eigen', order), filter_order=order, init_type=init_type, poly_basis=puf_basis, activation=activation)
+    n_groups = config.get('n_groups', 5) if config else 5
+    if config.get('guf', False):
+        guf_basis = poly_basis if poly_basis in ('bernstein', 'cheby') else 'bernstein'
+        return GroupFilter(n_eigen=config.get('n_eigen', order), n_groups=n_groups, filter_order=order, init_type=init_type, poly_basis=guf_basis, activation=activation)
     elif poly_basis == 'direct':
         return DirectFilter(n_eigen=config.get('n_eigen', order), init_type=init_type, dropout=dropout, activation=activation)
     elif poly_basis == 'adaptive':

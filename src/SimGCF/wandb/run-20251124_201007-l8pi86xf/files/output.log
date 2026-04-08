@@ -1,0 +1,3 @@
+Preparing [1;31madaptive cosine[0m similarity❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯ 100% | 00:00[0m
+Preparing [1;31madaptive cosine[0m similarity❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯❯ 100% | 00:00[0m
+SimGCF-knn(2025) | ep(300) 117 | ba(243)  57 | loss 0.1102 | mem 1.0G: ❯❯❯❯❯❯❯░░░░░░░░░░░░░  39% | 29:42, N@5:0.034 N@10:0.047 H@5:0.055 H@10:0.095 (best N@20:0.0636 @ep114, lr 1.00e-03)

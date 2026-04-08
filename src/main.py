@@ -9,7 +9,7 @@ import numpy as np
 import gc
 
 from model import LearnSpecCF
-from config import parse_args, get_config, SPLIT_RATIO, SPLIT_SEED
+from config import parse_args, get_config, SPLIT_SEED
 import procedure as pr
 import utils as ut
 from utils import C
@@ -38,10 +38,11 @@ def main(config_override=None):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    partial_train, validation_data = ut.split_training_data(dataset, split_ratio=SPLIT_RATIO, seed=SPLIT_SEED)
+    split_ratio = config.get('split_ratio', 0.7)
+    partial_train, validation_data = ut.split_training_data(dataset, split_ratio=split_ratio, seed=SPLIT_SEED)
     partial_adj = ut.create_partial_adj_matrix(partial_train, dataset.n_users, dataset.m_items)
 
-    model = LearnSpecCF(partial_adj, config, use_cache=True, split_seed=SPLIT_SEED, split_ratio=SPLIT_RATIO).to(config['device'])
+    model = LearnSpecCF(partial_adj, config, use_cache=True, split_seed=SPLIT_SEED, split_ratio=split_ratio).to(config['device'])
     optimizer = ut.create_optimizer(config, model.get_optimizer_groups())
     initial_params = {'config': config, **model.get_filter_snapshot()} if config['save'] else None
 
@@ -62,7 +63,7 @@ def main(config_override=None):
 
     for epoch in range(config['epochs']):
         model.train()
-        loss = pr.MSE_train_spectral(validation_data, model, optimizer, batch_size=config['batch_size'])
+        loss = pr.BPR_train_spectral(validation_data, model, optimizer, batch_size=config['batch_size'], n_neg=config.get('n_neg', 1))
 
         if (epoch + 1) % eval_every != 0 and epoch > 0:
             print(f"\rEpoch {epoch+1:0{ew}d}/{config['epochs']} | Loss: {loss:.4f}    ", end='', flush=True)
