@@ -142,6 +142,84 @@ class DirectFilter(nn.Module):
             return x.numpy(), self.forward().cpu().numpy()
 
 
+class UserAdaptiveFilter(nn.Module):
+    """Per-user adaptive spectral filter: c(u) = W @ z_u + b, then polynomial evaluation."""
+
+    def __init__(self, n_eigen, filter_order=8, init_type='uniform', poly_basis='bernstein', activation='sigmoid'):
+        super().__init__()
+        self.n_eigen = n_eigen
+        self.filter_order = filter_order
+        self.poly_basis = poly_basis
+        self.activation = activation
+
+        # Bias acts as global baseline filter
+        self.bias = nn.Parameter(torch.tensor(get_init_coefficients(init_type, filter_order), dtype=torch.float32))
+        # W maps user spectral profile (n_eigen) to polynomial coefficients (K+1)
+        self.W = nn.Parameter(torch.randn(filter_order + 1, n_eigen) * 0.01)
+
+        if poly_basis == 'bernstein':
+            self.register_buffer('_binomials', precompute_bernstein_binomials(filter_order))
+        else:
+            self._binomials = None
+
+        self._cached_eigenvals_id = None
+        self._cached_x_normalized = None
+        self._cached_basis = None
+
+    def _get_normalized(self, eigenvals):
+        ev_id = eigenvals.data_ptr()
+        if self._cached_eigenvals_id != ev_id:
+            self._cached_x_normalized = normalize_eigenvalues_for_basis(eigenvals, self.poly_basis)
+            self._cached_basis = self._precompute_basis(self._cached_x_normalized)
+            self._cached_eigenvals_id = ev_id
+        return self._cached_x_normalized, self._cached_basis
+
+    def _precompute_basis(self, x):
+        """Precompute basis functions: (K+1, k) matrix."""
+        K = self.filter_order
+        basis = torch.zeros(K + 1, len(x), device=x.device)
+        if self.poly_basis == 'bernstein':
+            for i in range(K + 1):
+                basis[i] = self._binomials[i] * (x ** i) * ((1 - x) ** (K - i))
+        elif self.poly_basis == 'cheby':
+            basis[0] = torch.ones_like(x)
+            if K >= 1:
+                basis[1] = x
+                for i in range(2, K + 1):
+                    basis[i] = 2 * x * basis[i - 1] - basis[i - 2]
+        return basis
+
+    def forward(self, eigenvals, user_spectral_embed=None):
+        """
+        eigenvals: (k,)
+        user_spectral_embed: (batch, k) — user eigenvecs weighted by eigenvals
+        Returns: (batch, k) per-user filter responses, or (k,) global if no embed given
+        """
+        _, basis = self._get_normalized(eigenvals)  # basis: (K+1, k)
+
+        if user_spectral_embed is None:
+            # Global mode: just use bias
+            response = self.bias @ basis  # (k,)
+            return apply_activation(response, self.activation)
+
+        # Per-user coefficients: (batch, K+1)
+        coeffs = user_spectral_embed @ self.W.T + self.bias.unsqueeze(0)
+        # Per-user filter response: (batch, k)
+        response = coeffs @ basis
+        return apply_activation(response, self.activation)
+
+    def get_parameter_groups(self, config):
+        return [
+            {'params': [self.bias], 'name': 'filter_bias'},
+            {'params': [self.W], 'name': 'filter_adapt_W'},
+        ]
+
+    def get_filter_values(self, n_points=100):
+        with torch.no_grad():
+            x = torch.linspace(0, 1, n_points)
+            return x.numpy(), self.forward(x).numpy()
+
+
 class AdaptiveFilter(nn.Module):
     def __init__(self, n_eigen, filter_order=8, init_type='uniform', dropout=0.0, activation='sigmoid'):
         super().__init__()
@@ -181,7 +259,11 @@ def create_filter(order=8, init_type='uniform', config=None):
     activation = config.get('f_act', 'sigmoid') if config else 'sigmoid'
     dropout = config.get('f_dropout', 0.0) if config else 0.0
 
-    if poly_basis == 'direct':
+    if config.get('puf', False):
+        # UserAdaptiveFilter uses polynomial basis; map 'adaptive'/'direct' to 'bernstein'
+        puf_basis = poly_basis if poly_basis in ('bernstein', 'cheby') else 'bernstein'
+        return UserAdaptiveFilter(n_eigen=config.get('n_eigen', order), filter_order=order, init_type=init_type, poly_basis=puf_basis, activation=activation)
+    elif poly_basis == 'direct':
         return DirectFilter(n_eigen=config.get('n_eigen', order), init_type=init_type, dropout=dropout, activation=activation)
     elif poly_basis == 'adaptive':
         return AdaptiveFilter(n_eigen=config.get('n_eigen', order), filter_order=order, init_type=init_type, dropout=dropout, activation=activation)

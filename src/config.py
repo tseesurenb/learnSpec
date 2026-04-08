@@ -30,6 +30,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=1024)
     parser.add_argument('--patience', type=int, default=5)
     parser.add_argument('--eval_every', type=int, default=5)
+    parser.add_argument('--puf', action='store_true', default=False, help='Per-user adaptive spectral filter')
     parser.add_argument('--infer', action='store_true', default=False)
     parser.add_argument('--save', action='store_true', default=False)
     parser.add_argument('--device', type=str, default='auto', choices=['auto', 'cpu', 'cuda'])
@@ -54,6 +55,7 @@ def get_config(args):
         'opt': args.opt, 'lr': args.lr, 'decay': args.decay,
         'epochs': args.epochs, 'batch_size': args.batch_size,
         'patience': args.patience, 'eval_every': args.eval_every,
+        'puf': args.puf,
         'infer': args.infer, 'save': args.save,
         'device': device, 'loss': 'mse', 'topks': [20],
     }

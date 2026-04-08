@@ -94,8 +94,14 @@ class LearnSpecCF(nn.Module):
         if user_in_matrix_mask.any() and self.user_filter is not None:
             valid_users = users[user_in_matrix_mask]
             batch_user_vecs = self.user_eigenvecs[valid_users]
-            user_response = self.user_filter(self.user_eigenvals)
-            weighted_vecs = batch_user_vecs * user_response.unsqueeze(0)
+
+            if self.config.get('puf', False):
+                z_u = batch_user_vecs * self.user_eigenvals.unsqueeze(0)
+                user_response = self.user_filter(self.user_eigenvals, z_u)  # (batch, k)
+                weighted_vecs = batch_user_vecs * user_response
+            else:
+                user_response = self.user_filter(self.user_eigenvals)
+                weighted_vecs = batch_user_vecs * user_response.unsqueeze(0)
 
             if target_items is not None:
                 result = weighted_vecs @ self.user_spectral_R[:, target_items]
@@ -110,7 +116,11 @@ class LearnSpecCF(nn.Module):
         spectral_profiles = self.item_spectral_R[users]
 
         if self.item_filter is not None:
-            item_response = self.item_filter(self.item_eigenvals)
+            if self.config.get('puf', False):
+                z_u = spectral_profiles * self.item_eigenvals.unsqueeze(0)
+                item_response = self.item_filter(self.item_eigenvals, z_u)  # (batch, k)
+            else:
+                item_response = self.item_filter(self.item_eigenvals)
             filtered = spectral_profiles * item_response
             if target_items is not None:
                 return filtered @ self.item_eigenvecs[target_items].T

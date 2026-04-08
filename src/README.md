@@ -46,8 +46,12 @@ python main.py --dataset gowalla --u_eigen 200 --i_eigen 700 --beta 0.4 --infer
 # lastfm — NDCG@20: 0.2155
 python main.py --dataset lastfm --u_eigen 500 --i_eigen 50 --f_poly bernstein --f_order 16 --lr 0.01 --epochs 400 --patience 50
 
-# yelp2018 — NDCG@20: 0.0617 (baseline, beta=0.4)
-python main.py --dataset yelp2018 --u_eigen 300 --i_eigen 2000 --beta 0.4 --infer
+# yelp2018 — NDCG@20: 0.0619, RECALL@20: 0.0743 (baseline, beta=0.4)
+python main.py --dataset yelp2018 --u_eigen 290 --i_eigen 1900 --beta 0.4 --infer --f_init bandpass
+
+# amazon-book — NDCG@20: 0.0613, RECALL@20: 0.0759 (baseline, beta=0.25)
+python main.py --dataset amazon-book --u_eigen 2000 --i_eigen 14000 --beta 0.25 --infer --f_init lowpass
+
 ```
 
 ## Project Structure
