@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Generated data (large)
+cache/
+results/
+runs/
+exp/
+paper/
+
+# Baselines
+baselines/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
