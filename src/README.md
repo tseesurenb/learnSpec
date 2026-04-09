@@ -57,7 +57,11 @@ python main.py --dataset amazon-book --u_eigen 2000 --i_eigen 14000 --beta 0.25 
 
 Train test:
 
+python main.py --dataset ml-100k --f_poly bernstein --f_init lowpass --beta 0.3 --u_eigen 20 --i_eigen 50 --lr 0.01 --decay 0.1 --epochs 300 --- searched and verified.
+
 python main.py --dataset yelp2018 --u_eigen 290 --i_eigen 1900 --f_order 4 --f_init lowpass --lr 0.001 --decay 0.1 --epochs 200 --patience 50 --beta 0.4
+
+python main.py --dataset ml-100k --f_poly cheby --f_init lowpass --beta 0.3 --u_eigen 20 --i_eigen 50 --lr 0.01 --decay 0.1 --epochs 300 --freq_reg 5.0 -- strongest outcome so far: Final:    NDCG=0.4643 (+0.5%), Recall=0.3783 (+1.1%)
 
 
 ```

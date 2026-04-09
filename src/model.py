@@ -86,6 +86,14 @@ class LearnSpecCF(nn.Module):
         view_config['n_eigen'] = self.u_eigen if view == 'u' else self.i_eigen
         return create_filter(order=f_order, init_type=init_type, config=view_config)
 
+    def _apply_spec_dropout(self, response):
+        """Apply spectral dropout: randomly mask eigencomponents during training."""
+        spec_dropout = self.config.get('spec_dropout', 0.0)
+        if spec_dropout > 0 and self.training:
+            mask = torch.bernoulli(torch.full_like(response, 1.0 - spec_dropout))
+            return response * mask / (1.0 - spec_dropout)  # scale to maintain expected value
+        return response
+
     def get_user_spectral_filtering(self, users, target_items=None):
         user_in_matrix_mask = users < self.user_eigenvecs.shape[0]
         output_size = len(target_items) if target_items is not None else self.n_items
@@ -94,7 +102,7 @@ class LearnSpecCF(nn.Module):
         if user_in_matrix_mask.any() and self.user_filter is not None:
             valid_users = users[user_in_matrix_mask]
             batch_user_vecs = self.user_eigenvecs[valid_users]
-            user_response = self.user_filter(self.user_eigenvals)
+            user_response = self._apply_spec_dropout(self.user_filter(self.user_eigenvals))
             weighted_vecs = batch_user_vecs * user_response.unsqueeze(0)
 
             if target_items is not None:
@@ -110,7 +118,7 @@ class LearnSpecCF(nn.Module):
         spectral_profiles = self.item_spectral_R[users]
 
         if self.item_filter is not None:
-            item_response = self.item_filter(self.item_eigenvals)
+            item_response = self._apply_spec_dropout(self.item_filter(self.item_eigenvals))
             filtered = spectral_profiles * item_response
             if target_items is not None:
                 return filtered @ self.item_eigenvecs[target_items].T
@@ -160,6 +168,39 @@ class LearnSpecCF(nn.Module):
         if 'i' in self.view:
             views.append(self.get_item_spectral_filtering(users, target_items))
         return self._fuse_views(views)
+
+    def forward_selective_reduced(self, users, target_items, keep_ratio=0.5):
+        """Forward with a random subset of eigencomponents for consistency regularization."""
+        if not isinstance(users, torch.Tensor):
+            users = torch.as_tensor(users, dtype=torch.long, device=self.device)
+        if not isinstance(target_items, torch.Tensor):
+            target_items = torch.as_tensor(target_items, dtype=torch.long, device=self.device)
+
+        views = []
+        if 'u' in self.view:
+            k = self.user_eigenvals.shape[0]
+            k_reduced = max(1, int(k * keep_ratio))
+            idx = torch.randperm(k, device=self.device)[:k_reduced].sort().values
+            views.append(self._spectral_filter_reduced(users, target_items, 'u', idx))
+        if 'i' in self.view:
+            k = self.item_eigenvals.shape[0]
+            k_reduced = max(1, int(k * keep_ratio))
+            idx = torch.randperm(k, device=self.device)[:k_reduced].sort().values
+            views.append(self._spectral_filter_reduced(users, target_items, 'i', idx))
+        return self._fuse_views(views)
+
+    def _spectral_filter_reduced(self, users, target_items, view, eigen_idx):
+        """Compute spectral filtering with a subset of eigencomponents."""
+        if view == 'u':
+            batch_vecs = self.user_eigenvecs[users][:, eigen_idx]
+            response = self.user_filter(self.user_eigenvals)[eigen_idx]
+            weighted = batch_vecs * response.unsqueeze(0)
+            return weighted @ self.user_spectral_R[eigen_idx][:, target_items]
+        else:
+            profiles = self.item_spectral_R[users][:, eigen_idx]
+            response = self.item_filter(self.item_eigenvals)[eigen_idx]
+            filtered = profiles * response
+            return filtered @ self.item_eigenvecs[target_items][:, eigen_idx].T
 
     def _precompute_spectral_features(self):
         if 'u' in self.view:

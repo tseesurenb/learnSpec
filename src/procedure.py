@@ -4,7 +4,7 @@ import utils
 
 
 
-def train_spectral(validation_data, model, optimizer, batch_size=1000, loss_type='bpr'):
+def train_spectral(validation_data, model, optimizer, batch_size=1000, loss_type='bpr', spec_consist=0.0, freq_reg=0.0):
     model.train()
     users_with_validation = [u for u, items in validation_data.items() if len(items) > 0]
     if len(users_with_validation) == 0:
@@ -53,6 +53,23 @@ def train_spectral(validation_data, model, optimizer, batch_size=1000, loss_type
                     - torch.nn.functional.logsigmoid(-neg_scores)).mean()
         else:  # bpr
             loss = torch.nn.functional.softplus(neg_scores - pos_scores).mean()
+
+        # Spectral consistency: penalize difference between full and reduced eigencomponent predictions
+        if spec_consist > 0:
+            predicted_reduced = model.forward_selective_reduced(users, target_items, keep_ratio=0.5)
+            consist_loss = torch.nn.functional.mse_loss(predicted_reduced, predicted.detach())
+            loss = loss + spec_consist * consist_loss
+
+        # Frequency-aware regularization: penalize abrupt changes in filter response
+        if freq_reg > 0:
+            smooth_loss = 0.0
+            for filt, eigenvals in [(model.user_filter, getattr(model, 'user_eigenvals', None)),
+                                    (model.item_filter, getattr(model, 'item_eigenvals', None))]:
+                if filt is not None and eigenvals is not None:
+                    response = filt(eigenvals)
+                    diffs = response[1:] - response[:-1]
+                    smooth_loss = smooth_loss + (diffs ** 2).mean()
+            loss = loss + freq_reg * smooth_loss
 
         batch_weight = bs / len(users_with_validation)
         scaled_loss = loss * batch_weight

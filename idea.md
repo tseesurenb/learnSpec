@@ -145,3 +145,22 @@ where u is a regularization parameter related to noise level. This is Tikhonov r
 2. Visualize learned filters per user cluster — show they differ meaningfully
 3. Compare learned filter shape to theoretical optimum h* = l/(l+u)
 4. Ablation: polynomial order, number of eigenvalues, with/without adaptation
+
+
+
+
+
+
+
+
+
+============================================================================================================================================
+
+Idea 1 — Spectral Consistency Learning:
+To address the potential mismatch between sub-eigenspace training and full-spectrum inference, we introduce a spectral consistency objective that enforces alignment between predictions obtained in the truncated eigenspace and those projected from the full spectral space. Specifically, the model is encouraged to produce consistent outputs when operating under different spectral resolutions, ensuring that the learned filter generalizes beyond the training subspace. This regularization stabilizes training and reduces bias introduced by truncated representations, making the learned spectral response more robust and transferable.
+
+Idea 2 — Frequency-Aware Regularization:
+We incorporate a frequency-aware regularization mechanism that explicitly accounts for the role of different spectral components during learning. Instead of treating all eigenvalues equally, the model is guided to learn smoother and more structured spectral responses by penalizing abrupt changes across neighboring frequencies or by weighting frequency components based on their contribution to global versus local signals. This encourages the filter to maintain a coherent shape in the spectral domain, preventing overfitting to noisy high-frequency components while preserving meaningful variations necessary for personalization.
+
+Idea 3 — Spectral Dropout for Robust Learning:
+To improve generalization and robustness, we introduce spectral dropout, a data augmentation strategy applied directly in the eigenspace. During training, a subset of eigencomponents is randomly masked or perturbed, forcing the model to learn stable spectral patterns that do not rely on specific components. This stochastic regularization mimics variations in graph structure and encourages the model to distribute information more evenly across frequencies, leading to improved resilience against noise and better performance under different spectral configurations.

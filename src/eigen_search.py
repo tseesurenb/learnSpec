@@ -1,20 +1,20 @@
 """
 Eigen search: find optimal beta x u_eigen x i_eigen for each filter configuration.
 
-Unlike search.py which uses a fixed filter, this searches eigen/beta space
-per filter config since the optimal cuts depend on the filter shape.
-
 Auto-generates eigendecompositions for missing betas.
 
 Usage:
-    # Search all filter configs (bernstein/cheby x 5 inits)
-    python eigen_search.py --dataset ml-100k --eigen_step 25
+    # Fast mode: uniform filter only, find best beta x u_eigen x i_eigen
+    python eigen_search.py --dataset ml-100k --eigen_step 10 --fast
+
+    # Full mode: search all filter configs (bernstein/cheby x 5 inits)
+    python eigen_search.py --dataset ml-100k --eigen_step 10
 
     # Search specific filter only
     python eigen_search.py --dataset ml-100k --eigen_step 25 --f_poly bernstein --f_init bandpass
 
     # Search with specific betas (auto-generates if missing)
-    python eigen_search.py --dataset gowalla --betas 0.3 0.4 0.5 0.6 --n_eigen 1200
+    python eigen_search.py --dataset gowalla --betas 0.3 0.4 0.5 0.6 --n_eigen 1200 --fast
 
     # Limit search range
     python eigen_search.py --dataset gowalla --eigen_step 100 --max_u 1200 --max_i 700
@@ -55,6 +55,7 @@ def parse_args():
                         help='Beta values to search (auto-generates if missing). Default: use available from cache')
     parser.add_argument('--f_poly', type=str, default=None, choices=POLYS, help='Search only this poly type')
     parser.add_argument('--f_init', type=str, default=None, choices=INITS, help='Search only this init type')
+    parser.add_argument('--fast', action='store_true', help='Fast mode: uniform filter only, 1 config instead of 10')
     parser.add_argument('--n_iter', type=int, default=10, help='Power iterations for randomized SVD')
     parser.add_argument('--device', type=str, default='auto')
     return parser.parse_args()
@@ -287,11 +288,17 @@ def main():
             print(f"  Beta={beta}: eigen files missing, generating (n_eigen={args.n_eigen})...")
             generate_eigen(args.dataset, beta, args.n_eigen, cache_dir, n_iter=args.n_iter)
 
-    polys = [args.f_poly] if args.f_poly else POLYS
-    inits = [args.f_init] if args.f_init else INITS
+    # Fast mode: single uniform filter (10x faster)
+    if args.fast:
+        polys = ['bernstein']
+        inits = ['uniform']
+    else:
+        polys = [args.f_poly] if args.f_poly else POLYS
+        inits = [args.f_init] if args.f_init else INITS
 
     total_filters = len(polys) * len(inits)
-    print(f"\nEigen Search: {args.dataset}")
+    mode_label = "FAST" if args.fast else "FULL"
+    print(f"\nEigen Search ({mode_label}): {args.dataset}")
     print(f"  Filters: {total_filters} ({polys} x {inits})")
     print(f"  Betas: {betas}")
     print(f"  Eigen step: {args.eigen_step}")
@@ -299,7 +306,8 @@ def main():
     # Setup CSV
     results_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../results'))
     os.makedirs(results_dir, exist_ok=True)
-    csv_path = os.path.join(results_dir, f'eigen_search_{args.dataset}.csv')
+    suffix = '_fast' if args.fast else ''
+    csv_path = os.path.join(results_dir, f'eigen_search_{args.dataset}{suffix}.csv')
     fieldnames = ['f_poly', 'f_init', 'beta', 'u_eigen', 'i_eigen', 'ndcg', 'recall']
 
     # Resume
