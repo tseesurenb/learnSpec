@@ -54,6 +54,13 @@ def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000):
         total_loss += scaled_loss.item()
         scaled_loss.backward()
 
+    # Add smoothness regularization from ensemble filters
+    for filt in [model.user_filter, model.item_filter]:
+        if filt is not None and hasattr(filt, 'smoothness_loss'):
+            smooth_loss = filt.smoothness_loss()
+            if isinstance(smooth_loss, torch.Tensor):
+                smooth_loss.backward()
+
     optimizer.step()
     return total_loss
 

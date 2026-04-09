@@ -135,6 +135,80 @@ class APSFilter(nn.Module):
             return x.numpy(), self.forward(x).numpy()
 
 
+class EnsembleFilter(nn.Module):
+    """Multiple polynomial filters with learnable mixing weights and smoothness regularization."""
+
+    # Default init shapes for each subfilter
+    ENSEMBLE_INITS = ['lowpass', 'highpass', 'bandpass']
+
+    def __init__(self, n_filters=3, filter_order=8, poly_basis='bernstein', activation='sigmoid', smooth_weight=0.01):
+        super().__init__()
+        self.n_filters = n_filters
+        self.filter_order = filter_order
+        self.poly_basis = poly_basis
+        self.activation = activation
+        self.smooth_weight = smooth_weight
+
+        # Each subfilter gets a different init
+        inits = self.ENSEMBLE_INITS[:n_filters]
+        while len(inits) < n_filters:
+            inits.append('uniform')
+
+        # Stack all coefficients: (n_filters, K+1)
+        all_coeffs = [get_init_coefficients(init, filter_order) for init in inits]
+        self.coeffs = nn.Parameter(torch.tensor(all_coeffs, dtype=torch.float32))
+
+        # Mixing weights
+        self.mix_logits = nn.Parameter(torch.ones(n_filters))
+
+        if poly_basis == 'bernstein':
+            self.register_buffer('_binomials', precompute_bernstein_binomials(filter_order))
+        else:
+            self._binomials = None
+
+        self._cached_eigenvals_id = None
+        self._cached_x_normalized = None
+
+    def forward(self, eigenvals):
+        batch_shape = eigenvals.shape
+        eigenvals_flat = eigenvals.view(-1)
+
+        ev_id = eigenvals_flat.data_ptr()
+        if self._cached_eigenvals_id != ev_id:
+            self._cached_x_normalized = normalize_eigenvalues_for_basis(eigenvals_flat, self.poly_basis)
+            self._cached_eigenvals_id = ev_id
+
+        x = self._cached_x_normalized
+        mix_weights = torch.softmax(self.mix_logits, dim=0)
+
+        # Evaluate each subfilter and mix
+        combined = torch.zeros_like(x)
+        for j in range(self.n_filters):
+            response = evaluate_polynomial_basis(self.coeffs[j], x, self.poly_basis, self._binomials)
+            combined += mix_weights[j] * response
+
+        return apply_activation(combined, self.activation).view(batch_shape)
+
+    def smoothness_loss(self):
+        """Penalize non-smooth filter responses — encourages gradual frequency transitions."""
+        if self.smooth_weight <= 0:
+            return 0.0
+        # Penalize differences between adjacent coefficients for each subfilter
+        diffs = self.coeffs[:, 1:] - self.coeffs[:, :-1]
+        return self.smooth_weight * (diffs ** 2).mean()
+
+    def get_parameter_groups(self, config):
+        return [
+            {'params': [self.coeffs], 'name': 'ensemble_coeffs'},
+            {'params': [self.mix_logits], 'name': 'ensemble_mix'},
+        ]
+
+    def get_filter_values(self, n_points=100):
+        with torch.no_grad():
+            x = torch.linspace(0, 1, n_points)
+            return x.numpy(), self.forward(x).numpy()
+
+
 class DirectFilter(nn.Module):
     def __init__(self, n_eigen, init_type='uniform', dropout=0.0, activation='sigmoid'):
         super().__init__()
@@ -285,6 +359,12 @@ def create_filter(order=8, init_type='uniform', config=None):
     poly_basis = config.get('poly', 'bernstein') if config else 'bernstein'
     activation = config.get('f_act', 'sigmoid') if config else 'sigmoid'
     dropout = config.get('f_dropout', 0.0) if config else 0.0
+
+    if config.get('ensemble', False):
+        n_filters = config.get('n_filters', 3)
+        smooth_weight = config.get('smooth', 0.01)
+        ens_basis = poly_basis if poly_basis in ('bernstein', 'cheby') else 'bernstein'
+        return EnsembleFilter(n_filters=n_filters, filter_order=order, poly_basis=ens_basis, activation=activation, smooth_weight=smooth_weight)
 
     n_groups = config.get('n_groups', 5) if config else 5
     if config.get('guf', False):
