@@ -30,14 +30,6 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=1024)
     parser.add_argument('--patience', type=int, default=10)
     parser.add_argument('--eval_every', type=int, default=5)
-    parser.add_argument('--ensemble', action='store_true', default=False, help='Use ensemble of multiple filters')
-    parser.add_argument('--n_filters', type=int, default=3, help='Number of subfilters for ensemble')
-    parser.add_argument('--smooth', type=float, default=0.01, help='Smoothness regularization weight')
-    parser.add_argument('--guf', action='store_true', default=False, help='Group-adaptive spectral filter')
-    parser.add_argument('--n_groups', type=int, default=5, help='Number of user groups for --guf')
-    parser.add_argument('--cross', action='store_true', default=False, help='Cross-view spectral interaction')
-    parser.add_argument('--svd', action='store_true', default=False, help='SVD view: direct spectral filtering on singular values')
-    parser.add_argument('--svd_k', type=int, default=50, help='Number of singular values for SVD view')
     parser.add_argument('--infer', action='store_true', default=False)
     parser.add_argument('--save', action='store_true', default=False)
     parser.add_argument('--split_ratio', type=float, default=0.7, help='Train/val split ratio for sub-eigenspace learning')
@@ -63,9 +55,6 @@ def get_config(args):
         'opt': args.opt, 'lr': args.lr, 'decay': args.decay,
         'epochs': args.epochs, 'batch_size': args.batch_size,
         'patience': args.patience, 'eval_every': args.eval_every,
-        'guf': args.guf, 'n_groups': args.n_groups, 'cross': args.cross,
-        'ensemble': args.ensemble, 'n_filters': args.n_filters, 'smooth': args.smooth,
-        'svd': args.svd, 'svd_k': args.svd_k,
         'split_ratio': args.split_ratio,
         'infer': args.infer, 'save': args.save,
         'device': device, 'topks': [20],

@@ -135,80 +135,6 @@ class APSFilter(nn.Module):
             return x.numpy(), self.forward(x).numpy()
 
 
-class EnsembleFilter(nn.Module):
-    """Multiple polynomial filters with learnable mixing weights and smoothness regularization."""
-
-    # Default init shapes for each subfilter
-    ENSEMBLE_INITS = ['lowpass', 'highpass', 'bandpass']
-
-    def __init__(self, n_filters=3, filter_order=8, poly_basis='bernstein', activation='sigmoid', smooth_weight=0.01):
-        super().__init__()
-        self.n_filters = n_filters
-        self.filter_order = filter_order
-        self.poly_basis = poly_basis
-        self.activation = activation
-        self.smooth_weight = smooth_weight
-
-        # Each subfilter gets a different init
-        inits = self.ENSEMBLE_INITS[:n_filters]
-        while len(inits) < n_filters:
-            inits.append('uniform')
-
-        # Stack all coefficients: (n_filters, K+1)
-        all_coeffs = [get_init_coefficients(init, filter_order) for init in inits]
-        self.coeffs = nn.Parameter(torch.tensor(all_coeffs, dtype=torch.float32))
-
-        # Mixing weights
-        self.mix_logits = nn.Parameter(torch.ones(n_filters))
-
-        if poly_basis == 'bernstein':
-            self.register_buffer('_binomials', precompute_bernstein_binomials(filter_order))
-        else:
-            self._binomials = None
-
-        self._cached_eigenvals_id = None
-        self._cached_x_normalized = None
-
-    def forward(self, eigenvals):
-        batch_shape = eigenvals.shape
-        eigenvals_flat = eigenvals.view(-1)
-
-        ev_id = eigenvals_flat.data_ptr()
-        if self._cached_eigenvals_id != ev_id:
-            self._cached_x_normalized = normalize_eigenvalues_for_basis(eigenvals_flat, self.poly_basis)
-            self._cached_eigenvals_id = ev_id
-
-        x = self._cached_x_normalized
-        mix_weights = torch.softmax(self.mix_logits, dim=0)
-
-        # Evaluate each subfilter and mix
-        combined = torch.zeros_like(x)
-        for j in range(self.n_filters):
-            response = evaluate_polynomial_basis(self.coeffs[j], x, self.poly_basis, self._binomials)
-            combined += mix_weights[j] * response
-
-        return apply_activation(combined, self.activation).view(batch_shape)
-
-    def smoothness_loss(self):
-        """Penalize non-smooth filter responses — encourages gradual frequency transitions."""
-        if self.smooth_weight <= 0:
-            return 0.0
-        # Penalize differences between adjacent coefficients for each subfilter
-        diffs = self.coeffs[:, 1:] - self.coeffs[:, :-1]
-        return self.smooth_weight * (diffs ** 2).mean()
-
-    def get_parameter_groups(self, config):
-        return [
-            {'params': [self.coeffs], 'name': 'ensemble_coeffs'},
-            {'params': [self.mix_logits], 'name': 'ensemble_mix'},
-        ]
-
-    def get_filter_values(self, n_points=100):
-        with torch.no_grad():
-            x = torch.linspace(0, 1, n_points)
-            return x.numpy(), self.forward(x).numpy()
-
-
 class DirectFilter(nn.Module):
     def __init__(self, n_eigen, init_type='uniform', dropout=0.0, activation='sigmoid'):
         super().__init__()
@@ -241,84 +167,6 @@ class DirectFilter(nn.Module):
         with torch.no_grad():
             x = torch.linspace(0, 1, self.n_eigen)
             return x.numpy(), self.forward().cpu().numpy()
-
-
-class GroupFilter(nn.Module):
-    """Group-adaptive spectral filter: G group filters mixed by soft user-group assignment."""
-
-    def __init__(self, n_eigen, n_groups=5, filter_order=8, init_type='uniform', poly_basis='bernstein', activation='sigmoid'):
-        super().__init__()
-        self.n_eigen = n_eigen
-        self.n_groups = n_groups
-        self.filter_order = filter_order
-        self.poly_basis = poly_basis
-        self.activation = activation
-
-        # G sets of polynomial coefficients, each initialized differently
-        init_offsets = torch.linspace(-0.5, 0.5, n_groups)
-        base_init = torch.tensor(get_init_coefficients(init_type, filter_order), dtype=torch.float32)
-        group_coeffs = base_init.unsqueeze(0).repeat(n_groups, 1) + init_offsets.unsqueeze(1) * 0.1
-        self.group_coeffs = nn.Parameter(group_coeffs)  # (G, K+1)
-
-        # Assignment matrix: maps spectral profile (n_eigen) to group logits (G)
-        self.V = nn.Parameter(torch.randn(n_groups, n_eigen) * 0.01)
-
-        if poly_basis == 'bernstein':
-            self.register_buffer('_binomials', precompute_bernstein_binomials(filter_order))
-        else:
-            self._binomials = None
-
-        self._cached_eigenvals_id = None
-        self._cached_basis = None
-
-    def _get_basis(self, eigenvals):
-        ev_id = eigenvals.data_ptr()
-        if self._cached_eigenvals_id != ev_id:
-            x = normalize_eigenvalues_for_basis(eigenvals, self.poly_basis)
-            K = self.filter_order
-            basis = torch.zeros(K + 1, len(x), device=x.device)
-            if self.poly_basis == 'bernstein':
-                for i in range(K + 1):
-                    basis[i] = self._binomials[i] * (x ** i) * ((1 - x) ** (K - i))
-            elif self.poly_basis == 'cheby':
-                basis[0] = torch.ones_like(x)
-                if K >= 1:
-                    basis[1] = x
-                    for i in range(2, K + 1):
-                        basis[i] = 2 * x * basis[i - 1] - basis[i - 2]
-            self._cached_basis = basis
-            self._cached_eigenvals_id = ev_id
-        return self._cached_basis
-
-    def forward(self, eigenvals, user_spectral_embed=None):
-        """
-        eigenvals: (k,)
-        user_spectral_embed: (batch, k) — L2-normalized spectral profile
-        Returns: (batch, k) per-group filter responses, or (k,) global if no embed
-        """
-        basis = self._get_basis(eigenvals)  # (K+1, k)
-        # All group filter responses: (G, k)
-        group_responses = apply_activation(self.group_coeffs @ basis, self.activation)
-
-        if user_spectral_embed is None:
-            # Global mode: equal-weight average of all groups
-            return group_responses.mean(dim=0)
-
-        # Soft assignment: (batch, G)
-        group_weights = torch.softmax(user_spectral_embed @ self.V.T, dim=1)
-        # Weighted mix of group responses: (batch, k)
-        return group_weights @ group_responses
-
-    def get_parameter_groups(self, config):
-        return [
-            {'params': [self.group_coeffs], 'name': 'group_filter_coeffs'},
-            {'params': [self.V], 'name': 'group_assign_V'},
-        ]
-
-    def get_filter_values(self, n_points=100):
-        with torch.no_grad():
-            x = torch.linspace(0, 1, n_points)
-            return x.numpy(), self.forward(x).numpy()
 
 
 class AdaptiveFilter(nn.Module):
@@ -360,17 +208,7 @@ def create_filter(order=8, init_type='uniform', config=None):
     activation = config.get('f_act', 'sigmoid') if config else 'sigmoid'
     dropout = config.get('f_dropout', 0.0) if config else 0.0
 
-    if config.get('ensemble', False):
-        n_filters = config.get('n_filters', 3)
-        smooth_weight = config.get('smooth', 0.01)
-        ens_basis = poly_basis if poly_basis in ('bernstein', 'cheby') else 'bernstein'
-        return EnsembleFilter(n_filters=n_filters, filter_order=order, poly_basis=ens_basis, activation=activation, smooth_weight=smooth_weight)
-
-    n_groups = config.get('n_groups', 5) if config else 5
-    if config.get('guf', False):
-        guf_basis = poly_basis if poly_basis in ('bernstein', 'cheby') else 'bernstein'
-        return GroupFilter(n_eigen=config.get('n_eigen', order), n_groups=n_groups, filter_order=order, init_type=init_type, poly_basis=guf_basis, activation=activation)
-    elif poly_basis == 'direct':
+    if poly_basis == 'direct':
         return DirectFilter(n_eigen=config.get('n_eigen', order), init_type=init_type, dropout=dropout, activation=activation)
     elif poly_basis == 'adaptive':
         return AdaptiveFilter(n_eigen=config.get('n_eigen', order), filter_order=order, init_type=init_type, dropout=dropout, activation=activation)
