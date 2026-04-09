@@ -84,7 +84,7 @@ def main(config_override=None):
         loss = pr.train_spectral(validation_data, model, optimizer,
                                  batch_size=config['batch_size'], loss_type=config.get('loss', 'bpr'),
                                  spec_consist=config.get('spec_consist', 0.0),
-                                 freq_reg=config.get('freq_reg', 0.0))
+                                 f_reg=config.get('f_reg', 0.0))
 
         if (epoch + 1) % eval_every != 0 and epoch > 0:
             print(f"\rEpoch {epoch+1:0{ew}d}/{config['epochs']} | Loss: {loss:.4f}    ", end='', flush=True)
@@ -126,8 +126,8 @@ def main(config_override=None):
     if best_state is None:
         best_state = model.get_filter_snapshot()
 
-    # Free training model memory before loading final model
-    del model
+    # Free all training memory before loading final model
+    del model, partial_train, validation_data, partial_adj
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()

@@ -37,7 +37,7 @@ def parse_args():
     parser.add_argument('--log', action='store_true', default=False, help='Log detailed filter state at each eval step')
     parser.add_argument('--split_ratio', type=float, default=0.7, help='Train/val split ratio for sub-eigenspace learning')
     parser.add_argument('--spec_consist', type=float, default=0.0, help='Spectral consistency regularization weight')
-    parser.add_argument('--freq_reg', type=float, default=0.0, help='Frequency-aware smoothness regularization weight')
+    parser.add_argument('--f_reg', type=float, default=0.0, help='Frequency-aware smoothness regularization weight')
     parser.add_argument('--spec_dropout', type=float, default=0.0, help='Spectral dropout: probability of masking eigencomponents during training')
     parser.add_argument('--device', type=str, default='auto', choices=['auto', 'cpu', 'cuda'])
     return parser.parse_args()
@@ -62,7 +62,7 @@ def get_config(args):
         'epochs': args.epochs, 'batch_size': args.batch_size,
         'patience': args.patience, 'eval_every': args.eval_every,
         'split_ratio': args.split_ratio,
-        'spec_consist': args.spec_consist, 'freq_reg': args.freq_reg,
+        'spec_consist': args.spec_consist, 'f_reg': args.f_reg,
         'spec_dropout': args.spec_dropout,
         'infer': args.infer, 'save': args.save, 'log': args.log,
         'device': device, 'topks': [20],

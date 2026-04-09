@@ -12,7 +12,7 @@ import numpy as np
 class TrainLogger:
     def __init__(self, config, model):
         self.config = config
-        self.model = model
+        self.model = None  # don't hold model reference (causes OOM on large datasets)
         self.enabled = config.get('log', False)
         if not self.enabled:
             return

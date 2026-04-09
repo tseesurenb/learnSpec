@@ -4,7 +4,7 @@ import utils
 
 
 
-def train_spectral(validation_data, model, optimizer, batch_size=1000, loss_type='bpr', spec_consist=0.0, freq_reg=0.0):
+def train_spectral(validation_data, model, optimizer, batch_size=1000, loss_type='bpr', spec_consist=0.0, f_reg=0.0):
     model.train()
     users_with_validation = [u for u, items in validation_data.items() if len(items) > 0]
     if len(users_with_validation) == 0:
@@ -61,7 +61,7 @@ def train_spectral(validation_data, model, optimizer, batch_size=1000, loss_type
             loss = loss + spec_consist * consist_loss
 
         # Frequency-aware regularization: penalize abrupt changes in filter response
-        if freq_reg > 0:
+        if f_reg > 0:
             smooth_loss = 0.0
             for filt, eigenvals in [(model.user_filter, getattr(model, 'user_eigenvals', None)),
                                     (model.item_filter, getattr(model, 'item_eigenvals', None))]:
@@ -69,7 +69,7 @@ def train_spectral(validation_data, model, optimizer, batch_size=1000, loss_type
                     response = filt(eigenvals)
                     diffs = response[1:] - response[:-1]
                     smooth_loss = smooth_loss + (diffs ** 2).mean()
-            loss = loss + freq_reg * smooth_loss
+            loss = loss + f_reg * smooth_loss
 
         batch_weight = bs / len(users_with_validation)
         scaled_loss = loss * batch_weight

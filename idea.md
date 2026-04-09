@@ -164,3 +164,72 @@ We incorporate a frequency-aware regularization mechanism that explicitly accoun
 
 Idea 3 — Spectral Dropout for Robust Learning:
 To improve generalization and robustness, we introduce spectral dropout, a data augmentation strategy applied directly in the eigenspace. During training, a subset of eigencomponents is randomly masked or perturbed, forcing the model to learn stable spectral patterns that do not rely on specific components. This stochastic regularization mimics variations in graph structure and encourages the model to distribute information more evenly across frequencies, leading to improved resilience against noise and better performance under different spectral configurations.
+
+
+
+
+
+=================================================== Third group of ideas ===========================================
+
+IDEA 1 — Spectral Contrastive Learning (BEST)
+
+We introduce a spectral contrastive learning objective that enforces consistency between representations obtained from different spectral views of the interaction graph. Specifically, we generate two views by applying different spectral truncations or filters, and encourage the resulting user–item representations to remain aligned. This objective promotes invariance to spectral perturbations while preserving essential structural information. Unlike standard contrastive learning, our formulation operates directly in the spectral domain, ensuring that the learned filter captures robust and transferable frequency patterns rather than overfitting to a specific eigenspace configuration.
+
+🧠 Why this is strong
+directly uses your truncation idea
+fits perfectly with sub-eigenspace
+reviewers like contrastive learning
+but this is spectral-specific, not generic
+💡 Simple implementation
+View 1: 
+𝑘 k eigen
+View 2: 
+𝑘 + 𝛿 k+δ or different β
+
+contrast embeddings
+🔥 🥈 IDEA 2 — Spectral Ranking Loss (BPR++)
+
+We extend the standard BPR objective by incorporating a spectral ranking component that accounts for frequency-aware preferences. In addition to optimizing pairwise ranking in the interaction space, we impose consistency constraints on the spectral responses associated with positive and negative items. Specifically, we encourage the learned filter to assign higher importance to frequency components that contribute to observed interactions while suppressing those associated with negative samples. This results in a joint optimization over interaction space and spectral space, enabling the model to learn not only which items to rank higher, but also which frequency patterns are most informative for recommendation.
+
+🧠 Why this is interesting
+goes beyond “predict score”
+learns which frequencies matter for ranking
+aligns perfectly with your filter learning idea
+💡 Simple version
+
+Add:
+
+𝐿𝑠𝑝𝑒𝑐=∑(ℎ(𝜆𝑖)⋅𝑠𝑖𝑔𝑛𝑎𝑙𝑝𝑜𝑠 − ℎ(𝜆𝑖)⋅𝑠𝑖𝑔𝑛𝑎𝑙𝑛𝑒𝑔)L spec =∑(h(λi)⋅signal pos −h(λi)⋅signalneg)
+
+🔥 🥉 IDEA 3 — Spectral Perturbation Learning (robust CF)
+
+To improve robustness and generalization, we introduce spectral perturbation learning, where the model is trained to remain stable under small perturbations of the spectral domain. Specifically, we randomly perturb eigenvalues or truncate slightly different eigenspaces during training, and enforce consistency in the resulting predictions. This encourages the model to learn stable spectral patterns that are not sensitive to small changes in graph structure or decomposition. Unlike standard data augmentation, this approach directly targets the spectral representation, making it particularly suitable for graph-based collaborative filtering.
+
+
+IDEA 4:
+
+
+Cross-View Spectral Consistency Learning
+
+To explicitly couple the user–user and item–item spectral representations, we introduce a cross-view spectral consistency objective that aligns the two views through observed user–item interactions. While the user and item spectral spaces are learned independently, they should produce compatible interaction signals when mapped into the shared interaction space. This constraint ensures that both views capture coherent structural patterns rather than optimizing in isolation.
+
+Formally, let 
+𝑢𝑢∈𝑅𝑑uu∈Rd denote the embedding of user 𝑢 u obtained from the user–user spectral view, and 𝑣𝑖∈𝑅𝑑vi ∈Rd denote the embedding of item 𝑖
+i obtained from the item–item spectral view. The predicted interaction score is given by:
+𝑠𝑢𝑖=𝑢𝑢⊤𝑣𝑖. sui=uu⊤vi.
+In addition to the standard BPR loss, we introduce a consistency constraint that enforces agreement between interaction signals induced by the two spectral views. For each observed interaction 
+(𝑢,𝑖)(u,i), we define:
+𝐿𝑐𝑜𝑛𝑠=∑(𝑢,𝑖)(𝑠𝑢𝑖(𝑢) − 𝑠𝑢𝑖(𝑖))2,Lcons=(u,i)∑(sui(u)−sui(i))2,
+where 
+𝑠𝑢𝑖(𝑢)sui(u) and 𝑠𝑢𝑖(𝑖)sui(i) denote interaction scores computed from the user and item spectral projections, respectively (e.g., via user-side and item-side reconstructed representations). This enforces that both spectral views produce consistent predictions for the same interaction.
+
+The final training objective becomes:
+
+𝐿=𝐿𝐵𝑃𝑅+𝜆𝑐𝑜𝑛𝑠 𝐿𝑐𝑜𝑛𝑠,
+L=LBPR+λconsLcons,where 𝜆𝑐𝑜𝑛𝑠λcons controls the strength of cross-view alignment.
+
+In practice, this objective is implemented with minimal overhead. During each training step, we compute user and item embeddings from their respective spectral views, evaluate interaction scores, and apply the consistency loss on positive pairs. Negative samples are handled through the BPR term, ensuring ranking performance while the consistency term regularizes the latent space. This design allows the model to jointly optimize ranking quality and cross-view coherence, leading to more stable and interpretable spectral representations.
+
+One-line intuition (you can add after)
+
+This objective enforces that the user and item spectral spaces provide consistent explanations of observed interactions, effectively aligning the two views through the interaction graph.
