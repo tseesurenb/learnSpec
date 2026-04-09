@@ -56,6 +56,7 @@ def parse_args():
     parser.add_argument('--f_poly', type=str, default=None, choices=POLYS, help='Search only this poly type')
     parser.add_argument('--f_init', type=str, default=None, choices=INITS, help='Search only this init type')
     parser.add_argument('--fast', action='store_true', help='Fast mode: uniform filter only, 1 config instead of 10')
+    parser.add_argument('--grid_patience', type=int, default=3, help='Skip remaining values after N consecutive non-improvements in grid search')
     parser.add_argument('--n_iter', type=int, default=10, help='Power iterations for randomized SVD')
     parser.add_argument('--device', type=str, default='auto')
     return parser.parse_args()
@@ -234,7 +235,7 @@ def search_one_filter(dataset_name, poly, f_init, betas, device, args, writer, f
                         row_best, i_no_improve = ndcg, 0
                     else:
                         i_no_improve += 1
-                        if i_no_improve >= 3:
+                        if i_no_improve >= args.grid_patience:
                             break
                 else:
                     break
@@ -243,7 +244,7 @@ def search_one_filter(dataset_name, poly, f_init, betas, device, args, writer, f
                 prev_u_best, u_no_improve = row_best, 0
             else:
                 u_no_improve += 1
-                if u_no_improve >= 3:
+                if u_no_improve >= args.grid_patience:
                     break
 
         del dataset
@@ -288,10 +289,10 @@ def main():
             print(f"  Beta={beta}: eigen files missing, generating (n_eigen={args.n_eigen})...")
             generate_eigen(args.dataset, beta, args.n_eigen, cache_dir, n_iter=args.n_iter)
 
-    # Fast mode: single uniform filter (10x faster)
+    # Fast mode: single lowpass filter (10x faster, better truncation detection)
     if args.fast:
         polys = ['bernstein']
-        inits = ['uniform']
+        inits = ['lowpass']
     else:
         polys = [args.f_poly] if args.f_poly else POLYS
         inits = [args.f_init] if args.f_init else INITS
