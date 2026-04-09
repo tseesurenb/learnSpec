@@ -4,43 +4,14 @@ import utils
 
 
 
-def _get_neg_arrays(validation_data, users_with_validation, n_items, cache_dir=None, split_seed=42, split_ratio=0.7):
-    """Build or load cached negative item arrays per user."""
-    import os, pickle
-
-    if cache_dir:
-        neg_cache_file = os.path.join(cache_dir, f'neg_arrays_seed{split_seed}_ratio{int(split_ratio*100)}_n{n_items}.pkl')
-        if os.path.exists(neg_cache_file):
-            with open(neg_cache_file, 'rb') as f:
-                return pickle.load(f)
-
-    neg_arrays = {}
-    all_items_set = set(range(n_items))
-    for u in users_with_validation:
-        pos_set = set(validation_data[u])
-        neg_arrays[u] = np.array(sorted(all_items_set - pos_set), dtype=np.int32)
-
-    if cache_dir:
-        os.makedirs(cache_dir, exist_ok=True)
-        with open(neg_cache_file, 'wb') as f:
-            pickle.dump(neg_arrays, f)
-        print(f"    Cached negative arrays: {os.path.basename(neg_cache_file)}")
-
-    return neg_arrays
-
-
-def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000, n_items=None, n_neg=1,
-                       cache_dir=None, split_seed=42, split_ratio=0.7):
+def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000):
     model.train()
     users_with_validation = [u for u, items in validation_data.items() if len(items) > 0]
     if len(users_with_validation) == 0:
         return 0.0
 
-    if n_items is None:
-        n_items = model.n_items
-
-    user_neg_arrays = _get_neg_arrays(validation_data, users_with_validation, n_items,
-                                      cache_dir=cache_dir, split_seed=split_seed, split_ratio=split_ratio)
+    n_items = model.n_items
+    user_pos_sets = {u: set(validation_data[u]) for u in users_with_validation}
 
     total_loss = 0.0
     optimizer.zero_grad()
@@ -49,26 +20,23 @@ def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000, n_ite
         batch_end = min(batch_start + batch_size, len(users_with_validation))
         batch_users = users_with_validation[batch_start:batch_end]
 
-        # Sample one positive and n_neg negatives per user
-        b_users, b_pos, b_neg_list = [], [], []
+        b_users, b_pos, b_neg = [], [], []
         for user_id in batch_users:
             val_items = validation_data[user_id]
             if len(val_items) == 0:
                 continue
             pos_item = val_items[np.random.randint(len(val_items))]
-            neg_items = np.random.choice(user_neg_arrays[user_id], size=n_neg, replace=True)
+            neg = np.random.randint(n_items)
+            while neg in user_pos_sets[user_id]:
+                neg = np.random.randint(n_items)
             b_users.append(user_id)
             b_pos.append(pos_item)
-            b_neg_list.append(neg_items.tolist() if n_neg > 1 else [int(neg_items[0])])
+            b_neg.append(neg)
 
         if not b_users:
             continue
 
-        # Collect all unique target items
-        all_items = set(b_pos)
-        for negs in b_neg_list:
-            all_items.update(negs)
-        target_items = sorted(all_items)
+        target_items = sorted(set(b_pos + b_neg))
         item_to_idx = {item: idx for idx, item in enumerate(target_items)}
 
         users = torch.as_tensor(b_users, dtype=torch.long, device=model.device)
@@ -76,19 +44,12 @@ def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000, n_ite
         bs = len(b_users)
 
         pos_idx = [item_to_idx[p] for p in b_pos]
+        neg_idx = [item_to_idx[n] for n in b_neg]
         pos_scores = predicted[range(bs), pos_idx]
+        neg_scores = predicted[range(bs), neg_idx]
 
-        if n_neg == 1:
-            neg_idx = [item_to_idx[b_neg_list[i][0]] for i in range(bs)]
-            neg_scores = predicted[range(bs), neg_idx]
-            bpr_loss = torch.nn.functional.softplus(neg_scores - pos_scores).mean()
-        else:
-            neg_idx = [[item_to_idx[n] for n in negs] for negs in b_neg_list]
-            neg_idx_t = torch.tensor(neg_idx, dtype=torch.long, device=model.device)
-            neg_scores = torch.gather(predicted, 1, neg_idx_t)
-            bpr_loss = torch.nn.functional.softplus(neg_scores - pos_scores.unsqueeze(1)).mean()
-
-        batch_weight = len(b_users) / len(users_with_validation)
+        bpr_loss = torch.nn.functional.softplus(neg_scores - pos_scores).mean()
+        batch_weight = bs / len(users_with_validation)
         scaled_loss = bpr_loss * batch_weight
         total_loss += scaled_loss.item()
         scaled_loss.backward()

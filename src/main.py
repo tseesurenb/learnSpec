@@ -26,7 +26,7 @@ def main(config_override=None):
     print(f"LearnSpec: {config['dataset']}({sr}) | {config['view']} | {config['poly']}(K={config['f_order']}) | "
           f"init={config['f_init']} | act={config['f_act']} | "
           f"u={config['u_eigen']},i={config['i_eigen']} | beta={config['beta']} | "
-          f"BPR(n_neg={config.get('n_neg',1)}) | {config['opt']}(lr={config['lr']}, decay={config['decay']}) | "
+          f"BPR | {config['opt']}(lr={config['lr']}, decay={config['decay']}) | "
           f"patience={config['patience']} | {config['device']}")
 
     dataset = ut.load_dataset(config)
@@ -67,8 +67,7 @@ def main(config_override=None):
 
     for epoch in range(config['epochs']):
         model.train()
-        loss = pr.BPR_train_spectral(validation_data, model, optimizer, batch_size=config['batch_size'], n_neg=config.get('n_neg', 1),
-                                      cache_dir=model.cache_dir, split_seed=SPLIT_SEED, split_ratio=split_ratio)
+        loss = pr.BPR_train_spectral(validation_data, model, optimizer, batch_size=config['batch_size'])
 
         if (epoch + 1) % eval_every != 0 and epoch > 0:
             print(f"\rEpoch {epoch+1:0{ew}d}/{config['epochs']} | Loss: {loss:.4f}    ", end='', flush=True)
@@ -126,7 +125,7 @@ def main(config_override=None):
     print(f"\n{C.BOLD}RESULTS (best epoch {best_epoch}):{C.END}")
     print(f"Config:   {config['dataset']}({config.get('split_ratio',0.7)}) | {config['poly']}(K={config['f_order']}) | init={config['f_init']} | act={config['f_act']} | "
           f"u={config['u_eigen']},i={config['i_eigen']} | beta={config['beta']} | "
-          f"BPR(n_neg={config.get('n_neg',1)}) | {config['opt']}(lr={config['lr']}, decay={config['decay']})")
+          f"BPR | {config['opt']}(lr={config['lr']}, decay={config['decay']})")
     print(f"{C.B}{C.BOLD}Baseline: NDCG={baseline_ndcg:.4f}, Recall={baseline_recall:.4f}{C.END}")
     print(f"Final:    {C.G if ndcg_pct > 0 else C.R}NDCG={final_ndcg:.4f} ({ndcg_pct:+.1f}%){C.END}, "
           f"{C.G if recall_pct > 0 else C.R}Recall={final_recall:.4f} ({recall_pct:+.1f}%){C.END}")

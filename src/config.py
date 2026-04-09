@@ -4,7 +4,7 @@ import torch
 SPLIT_RATIO = 0.7
 SPLIT_SEED = 42
 
-INIT_TYPES = ['uniform', 'lowpass', 'highpass', 'bandpass']
+INIT_TYPES = ['uniform', 'lowpass', 'highpass', 'bandpass', 'butterworth', 'bandreject', 'decay', 'rise', 'plateau']
 DATASETS = ['ml-100k', 'lastfm', 'gowalla', 'yelp2018', 'amazon-book']
 OPTIMIZERS = ['rmsprop', 'adam']
 POLYNOMIAL_BASIS = ['bernstein', 'cheby', 'direct', 'adaptive']
@@ -23,7 +23,6 @@ def parse_args():
     parser.add_argument('--f_poly', type=str, default='bernstein', choices=POLYNOMIAL_BASIS)
     parser.add_argument('--f_dropout', type=float, default=0.0)
     parser.add_argument('--f_act', type=str, default='sigmoid', choices=['sigmoid', 'softplus', 'tanh', 'none'])
-    parser.add_argument('--n_neg', type=int, default=1, help='Number of negative samples per positive for BPR')
     parser.add_argument('--opt', type=str, default='rmsprop', choices=OPTIMIZERS)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--decay', type=float, default=0)
@@ -65,5 +64,5 @@ def get_config(args):
         'svd': args.svd, 'svd_k': args.svd_k,
         'split_ratio': args.split_ratio,
         'infer': args.infer, 'save': args.save,
-        'device': device, 'n_neg': args.n_neg, 'topks': [20],
+        'device': device, 'topks': [20],
     }

@@ -14,8 +14,15 @@ def apply_activation(x, act_type='sigmoid'):
         return torch.sigmoid(x)
 
 
+def _logit(x):
+    """Inverse sigmoid: maps (0,1) -> (-inf, inf). Coefficients are pre-sigmoid."""
+    x = np.clip(x, 1e-6, 1 - 1e-6)
+    return float(np.log(x / (1 - x)))
+
+
 def get_init_coefficients(init_type, order):
     n = order + 1
+    t = np.linspace(0, 1, n)  # control points in [0,1]
     if init_type == 'lowpass':
         return [1.0 * (0.5 ** i) for i in range(n)]
     elif init_type == 'highpass':
@@ -23,6 +30,26 @@ def get_init_coefficients(init_type, order):
     elif init_type == 'bandpass':
         mid = (n - 1) / 2.0
         return [np.exp(-((i - mid) ** 2) / max(1, n / 3)) for i in range(n)]
+    elif init_type == 'butterworth':
+        # Mild low-pass with sharper rolloff than lowpass
+        vals = 0.40 + 0.35 / (1.0 + (2.0 * t) ** 4)
+        return [_logit(v) for v in vals]
+    elif init_type == 'bandreject':
+        # Opposite of bandpass: high at edges, dip in middle (notch filter)
+        mid = (n - 1) / 2.0
+        return [-np.exp(-((i - mid) ** 2) / max(1, n / 3)) for i in range(n)]
+    elif init_type == 'decay':
+        # Smooth exponential decay — gentle rolloff
+        vals = 0.25 * np.exp(-1.5 * t) + 0.50
+        return [_logit(v) for v in vals]
+    elif init_type == 'rise':
+        # Smooth linear rise — gentle low-to-high
+        vals = 0.40 + 0.25 * t
+        return [_logit(v) for v in vals]
+    elif init_type == 'plateau':
+        # Wide flat plateau in middle, rolls off at edges
+        vals = 0.45 + 0.30 * np.exp(-8.0 * (t - 0.5) ** 2)
+        return [_logit(v) for v in vals]
     else:  # uniform
         return [0.0] * n
 
