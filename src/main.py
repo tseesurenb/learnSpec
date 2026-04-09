@@ -18,7 +18,6 @@ from utils import C
 def main(config_override=None):
     if config_override and 'dataset' in config_override:
         # Direct config — skip argparse (used by search scripts)
-        import torch
         config = config_override.copy()
         if not isinstance(config.get('device'), torch.device):
             if config.get('device') == 'auto' or config.get('device') is None:
