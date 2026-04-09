@@ -7,7 +7,7 @@ SPLIT_SEED = 42
 INIT_TYPES = ['uniform', 'lowpass', 'highpass', 'bandpass', 'butterworth', 'bandreject', 'decay', 'rise', 'plateau']
 DATASETS = ['ml-100k', 'lastfm', 'gowalla', 'yelp2018', 'amazon-book']
 OPTIMIZERS = ['rmsprop', 'adam']
-POLYNOMIAL_BASIS = ['bernstein', 'cheby', 'direct', 'adaptive']
+POLYNOMIAL_BASIS = ['bernstein', 'cheby', 'direct']
 
 
 def parse_args():
@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument('--f_act', type=str, default='sigmoid', choices=['sigmoid', 'softplus', 'tanh', 'none'])
     parser.add_argument('--opt', type=str, default='rmsprop', choices=OPTIMIZERS)
     parser.add_argument('--lr', type=float, default=0.001)
-    parser.add_argument('--decay', type=float, default=0)
+    parser.add_argument('--decay', type=float, default=1e-02)
     parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=1024)
     parser.add_argument('--patience', type=int, default=10)

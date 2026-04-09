@@ -169,40 +169,6 @@ class DirectFilter(nn.Module):
             return x.numpy(), self.forward().cpu().numpy()
 
 
-class AdaptiveFilter(nn.Module):
-    def __init__(self, n_eigen, filter_order=8, init_type='uniform', dropout=0.0, activation='sigmoid'):
-        super().__init__()
-        self.n_eigen = n_eigen
-        self.filter_order = filter_order
-        self.dropout = nn.Dropout(p=dropout) if dropout > 0 else None
-        self.activation = activation
-        self.coeffs = nn.Parameter(torch.tensor(get_init_coefficients(init_type, filter_order), dtype=torch.float32))
-        self.corrections = nn.Parameter(torch.zeros(n_eigen))
-        self.register_buffer('_binomials', precompute_bernstein_binomials(filter_order))
-        self._cached_eigenvals_id = None
-        self._cached_x_normalized = None
-
-    def forward(self, eigenvals):
-        coeffs = self.dropout(self.coeffs) if self.dropout is not None and self.training else self.coeffs
-        ev_id = eigenvals.data_ptr()
-        if self._cached_eigenvals_id != ev_id:
-            self._cached_x_normalized = normalize_eigenvalues_for_basis(eigenvals, 'bernstein')
-            self._cached_eigenvals_id = ev_id
-        poly_response = evaluate_polynomial_basis(coeffs, self._cached_x_normalized, 'bernstein', self._binomials)
-        return apply_activation(poly_response + self.corrections, self.activation)
-
-    def get_parameter_groups(self, config):
-        return [
-            {'params': [self.coeffs], 'name': 'poly_coeffs'},
-            {'params': [self.corrections], 'name': 'eigen_corrections'},
-        ]
-
-    def get_filter_values(self, n_points=100):
-        with torch.no_grad():
-            x = torch.linspace(0, 1, self.n_eigen)
-            return x.numpy(), self.forward(x).cpu().numpy()
-
-
 def create_filter(order=8, init_type='uniform', config=None):
     poly_basis = config.get('poly', 'bernstein') if config else 'bernstein'
     activation = config.get('f_act', 'sigmoid') if config else 'sigmoid'
@@ -210,7 +176,5 @@ def create_filter(order=8, init_type='uniform', config=None):
 
     if poly_basis == 'direct':
         return DirectFilter(n_eigen=config.get('n_eigen', order), init_type=init_type, dropout=dropout, activation=activation)
-    elif poly_basis == 'adaptive':
-        return AdaptiveFilter(n_eigen=config.get('n_eigen', order), filter_order=order, init_type=init_type, dropout=dropout, activation=activation)
     else:
         return APSFilter(filter_order=order, init_filter_name=init_type, poly_basis=poly_basis, dropout=dropout, activation=activation)

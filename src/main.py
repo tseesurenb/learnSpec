@@ -16,10 +16,20 @@ from utils import C
 
 
 def main(config_override=None):
-    args = parse_args()
-    config = get_config(args)
-    if config_override:
-        config.update(config_override)
+    if config_override and 'dataset' in config_override:
+        # Direct config — skip argparse (used by search scripts)
+        import torch
+        config = config_override.copy()
+        if not isinstance(config.get('device'), torch.device):
+            if config.get('device') == 'auto' or config.get('device') is None:
+                config['device'] = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            else:
+                config['device'] = torch.device(config['device'])
+    else:
+        args = parse_args()
+        config = get_config(args)
+        if config_override:
+            config.update(config_override)
     ut.set_seed(config['seed'])
 
     sr = config.get('split_ratio', 0.7)
@@ -106,6 +116,12 @@ def main(config_override=None):
 
     if best_state is None:
         best_state = model.get_filter_snapshot()
+
+    # Free training model memory before loading final model
+    del model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     final_model = LearnSpecCF(dataset.UserItemNet, config, use_cache=True).to(config['device'])
     with torch.no_grad():
