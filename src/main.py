@@ -13,6 +13,7 @@ from config import parse_args, get_config, SPLIT_SEED
 import procedure as pr
 import utils as ut
 from utils import C
+from train_logger import TrainLogger
 
 
 def main(config_override=None):
@@ -35,7 +36,7 @@ def main(config_override=None):
     print(f"LearnSpec: {config['dataset']}({sr}) | {config['view']} | {config['poly']}(K={config['f_order']}) | "
           f"init={config['f_init']} | act={config['f_act']} | "
           f"u={config['u_eigen']},i={config['i_eigen']} | beta={config['beta']} | "
-          f"BPR | {config['opt']}(lr={config['lr']}, decay={config['decay']}) | "
+          f"{config.get('loss','bpr').upper()} | {config['opt']}(lr={config['lr']}, decay={config['decay']}) | "
           f"patience={config['patience']} | {config['device']}")
 
     dataset = ut.load_dataset(config)
@@ -58,6 +59,7 @@ def main(config_override=None):
     model = LearnSpecCF(partial_adj, config, use_cache=True, split_seed=SPLIT_SEED, split_ratio=split_ratio).to(config['device'])
     optimizer = ut.create_optimizer(config, model.get_optimizer_groups())
     initial_params = {'config': config, **model.get_filter_snapshot()} if config['save'] else None
+    logger = TrainLogger(config, model)
 
     model.eval()
     with torch.no_grad():
@@ -65,6 +67,9 @@ def main(config_override=None):
         val_results = pr.evaluate(temp_ds, model, split='val', batch_size=config['batch_size'])
     val_baseline_ndcg = val_results['ndcg'][0]
     print(f"{C.G}{C.BOLD}Baseline (validation): NDCG@20={val_baseline_ndcg:.4f}, Recall@20={val_results['recall'][0]:.4f}{C.END}")
+    logger.log_baseline(baseline_ndcg, baseline_recall, 'test')
+    logger.log_baseline(val_baseline_ndcg, val_results['recall'][0], 'val')
+    logger.log_epoch(0, 0.0, val_baseline_ndcg, val_results['recall'][0], model)
 
     best_ndcg, best_recall, best_epoch = 0, 0, -1
     best_state = None
@@ -76,7 +81,8 @@ def main(config_override=None):
 
     for epoch in range(config['epochs']):
         model.train()
-        loss = pr.BPR_train_spectral(validation_data, model, optimizer, batch_size=config['batch_size'])
+        loss = pr.train_spectral(validation_data, model, optimizer,
+                                 batch_size=config['batch_size'], loss_type=config.get('loss', 'bpr'))
 
         if (epoch + 1) % eval_every != 0 and epoch > 0:
             print(f"\rEpoch {epoch+1:0{ew}d}/{config['epochs']} | Loss: {loss:.4f}    ", end='', flush=True)
@@ -97,6 +103,8 @@ def main(config_override=None):
         is_best = ndcg > best_ndcg
         print("\r" + " | ".join(parts) + (" *" if is_best else ""))
         prev_params = ut.get_current_parameters(model)
+
+        logger.log_epoch(epoch + 1, loss, ndcg, recall, model)
 
         if is_best:
             best_ndcg, best_recall, best_epoch = ndcg, recall, epoch + 1
@@ -128,6 +136,7 @@ def main(config_override=None):
         final_model.eval()
         r = pr.evaluate(dataset, final_model, split='test', batch_size=config['batch_size'])
     final_ndcg, final_recall = r['ndcg'][0], r['recall'][0]
+    logger.log_final(best_epoch, baseline_ndcg, final_ndcg, baseline_recall, final_recall)
 
     if config['save']:
         params_file = ut.save_run_results(
@@ -140,7 +149,7 @@ def main(config_override=None):
     print(f"\n{C.BOLD}RESULTS (best epoch {best_epoch}):{C.END}")
     print(f"Config:   {config['dataset']}({config.get('split_ratio',0.7)}) | {config['poly']}(K={config['f_order']}) | init={config['f_init']} | act={config['f_act']} | "
           f"u={config['u_eigen']},i={config['i_eigen']} | beta={config['beta']} | "
-          f"BPR | {config['opt']}(lr={config['lr']}, decay={config['decay']})")
+          f"{config.get('loss','bpr').upper()} | {config['opt']}(lr={config['lr']}, decay={config['decay']})")
     print(f"{C.B}{C.BOLD}Baseline: NDCG={baseline_ndcg:.4f}, Recall={baseline_recall:.4f}{C.END}")
     print(f"Final:    {C.G if ndcg_pct > 0 else C.R}NDCG={final_ndcg:.4f} ({ndcg_pct:+.1f}%){C.END}, "
           f"{C.G if recall_pct > 0 else C.R}Recall={final_recall:.4f} ({recall_pct:+.1f}%){C.END}")

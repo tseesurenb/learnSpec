@@ -41,7 +41,8 @@ python main.py --dataset ml-100k --u_eigen 25 --i_eigen 130 --epochs 200
 python main.py --dataset ml-100k --u_eigen 25 --i_eigen 130 --f_poly bernstein --f_order 24 --f_init bandpass --infer
 
 # gowalla — NDCG@20: 0.1514 (baseline, beta=0.4)
- python main.py --dataset gowalla --u_eigen 310 --i_eigen 2000 --beta 0.4 --f_order 24 --f_init bandpass --decay 1e-02 --lr 0.001
+ python main.py --dataset gowalla --u_eigen 310 --i_eigen 2000 --beta 0.4 --f_poly bernstein --f_order 4 --f_init rise --f_act softplus --infer 
+
 
 # lastfm — NDCG@20: 0.2155
 python main.py --dataset lastfm --u_eigen 500 --i_eigen 50 --f_poly bernstein --f_order 16 --lr 0.01 --epochs 400 --patience 50
@@ -51,6 +52,13 @@ python main.py --dataset yelp2018 --u_eigen 290 --i_eigen 1900 --beta 0.4 --infe
 
 # amazon-book — NDCG@20: 0.0613, RECALL@20: 0.0759 (baseline, beta=0.25)
 python main.py --dataset amazon-book --u_eigen 2000 --i_eigen 14000 --beta 0.25 --infer --f_init lowpass
+
+
+
+Train test:
+
+python main.py --dataset yelp2018 --u_eigen 290 --i_eigen 1900 --f_order 4 --f_init lowpass --lr 0.001 --decay 0.1 --epochs 200 --patience 50 --beta 0.4
+
 
 ```
 

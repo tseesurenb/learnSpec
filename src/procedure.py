@@ -4,7 +4,7 @@ import utils
 
 
 
-def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000):
+def train_spectral(validation_data, model, optimizer, batch_size=1000, loss_type='bpr'):
     model.train()
     users_with_validation = [u for u, items in validation_data.items() if len(items) > 0]
     if len(users_with_validation) == 0:
@@ -48,14 +48,24 @@ def BPR_train_spectral(validation_data, model, optimizer, batch_size=1000):
         pos_scores = predicted[range(bs), pos_idx]
         neg_scores = predicted[range(bs), neg_idx]
 
-        bpr_loss = torch.nn.functional.softplus(neg_scores - pos_scores).mean()
+        if loss_type == 'bce':
+            loss = (-torch.nn.functional.logsigmoid(pos_scores)
+                    - torch.nn.functional.logsigmoid(-neg_scores)).mean()
+        else:  # bpr
+            loss = torch.nn.functional.softplus(neg_scores - pos_scores).mean()
+
         batch_weight = bs / len(users_with_validation)
-        scaled_loss = bpr_loss * batch_weight
+        scaled_loss = loss * batch_weight
         total_loss += scaled_loss.item()
         scaled_loss.backward()
 
     optimizer.step()
     return total_loss
+
+
+# Legacy aliases
+BPR_train_spectral = lambda *a, **kw: train_spectral(*a, **kw, loss_type='bpr')
+BCE_train_spectral = lambda *a, **kw: train_spectral(*a, **kw, loss_type='bce')
 
 
 def evaluate(dataset, model, split='test', batch_size=1000):

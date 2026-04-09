@@ -7,6 +7,7 @@ SPLIT_SEED = 42
 INIT_TYPES = ['uniform', 'lowpass', 'highpass', 'bandpass', 'butterworth', 'bandreject', 'decay', 'rise', 'plateau']
 DATASETS = ['ml-100k', 'lastfm', 'gowalla', 'yelp2018', 'amazon-book']
 OPTIMIZERS = ['rmsprop', 'adam']
+LOSSES = ['bpr', 'bce']
 POLYNOMIAL_BASIS = ['bernstein', 'cheby', 'direct']
 
 
@@ -19,19 +20,21 @@ def parse_args():
     parser.add_argument('--i_eigen', type=int, default=130)
     parser.add_argument('--beta', type=float, default=0.5)
     parser.add_argument('--f_order', type=int, default=32)
-    parser.add_argument('--f_init', type=str, default='bandpass', choices=INIT_TYPES)
+    parser.add_argument('--f_init', type=str, default='lowpass', choices=INIT_TYPES)
     parser.add_argument('--f_poly', type=str, default='bernstein', choices=POLYNOMIAL_BASIS)
     parser.add_argument('--f_dropout', type=float, default=0.0)
     parser.add_argument('--f_act', type=str, default='sigmoid', choices=['sigmoid', 'softplus', 'tanh', 'none'])
+    parser.add_argument('--loss', type=str, default='bpr', choices=LOSSES)
     parser.add_argument('--opt', type=str, default='rmsprop', choices=OPTIMIZERS)
-    parser.add_argument('--lr', type=float, default=0.001)
-    parser.add_argument('--decay', type=float, default=1e-02)
+    parser.add_argument('--lr', type=float, default=0.01)
+    parser.add_argument('--decay', type=float, default=0.1)
     parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=1024)
     parser.add_argument('--patience', type=int, default=10)
     parser.add_argument('--eval_every', type=int, default=5)
     parser.add_argument('--infer', action='store_true', default=False)
     parser.add_argument('--save', action='store_true', default=False)
+    parser.add_argument('--log', action='store_true', default=False, help='Log detailed filter state at each eval step')
     parser.add_argument('--split_ratio', type=float, default=0.7, help='Train/val split ratio for sub-eigenspace learning')
     parser.add_argument('--device', type=str, default='auto', choices=['auto', 'cpu', 'cuda'])
     return parser.parse_args()
@@ -52,10 +55,10 @@ def get_config(args):
         'u_eigen': args.u_eigen, 'i_eigen': args.i_eigen, 'beta': args.beta,
         'f_order': args.f_order, 'f_init': args.f_init, 'poly': args.f_poly,
         'f_dropout': args.f_dropout, 'f_act': args.f_act,
-        'opt': args.opt, 'lr': args.lr, 'decay': args.decay,
+        'loss': args.loss, 'opt': args.opt, 'lr': args.lr, 'decay': args.decay,
         'epochs': args.epochs, 'batch_size': args.batch_size,
         'patience': args.patience, 'eval_every': args.eval_every,
         'split_ratio': args.split_ratio,
-        'infer': args.infer, 'save': args.save,
+        'infer': args.infer, 'save': args.save, 'log': args.log,
         'device': device, 'topks': [20],
     }
