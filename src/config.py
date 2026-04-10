@@ -7,7 +7,7 @@ SPLIT_SEED = 42
 INIT_TYPES = ['uniform', 'lowpass', 'highpass', 'bandpass', 'butterworth', 'decay', 'rise']
 DATASETS = ['ml-100k', 'lastfm', 'gowalla', 'yelp2018', 'amazon-book']
 OPTIMIZERS = ['rmsprop', 'adam']
-POLYNOMIAL_BASIS = ['bernstein', 'cheby']
+POLYNOMIAL_BASIS = ['bernstein', 'cheby', 'direct']
 
 
 def parse_args():
@@ -17,14 +17,13 @@ def parse_args():
     parser.add_argument('--view', type=str, default='ui', help='u=user, i=item, ui=both')
     parser.add_argument('--u_eigen', type=int, default=20)
     parser.add_argument('--i_eigen', type=int, default=50)
-    parser.add_argument('--beta', type=float, default=0.3)
+    parser.add_argument('--beta', type=float, default=0.4)
     parser.add_argument('--f_order', type=int, default=32)
     parser.add_argument('--f_init', type=str, default='lowpass', choices=INIT_TYPES)
     parser.add_argument('--f_poly', type=str, default='bernstein', choices=POLYNOMIAL_BASIS)
     parser.add_argument('--f_drop', type=float, default=0.0, help='Spectral dropout: probability of masking eigencomponents during training')
     parser.add_argument('--f_act', type=str, default='sigmoid', choices=['sigmoid', 'softplus'])
     parser.add_argument('--local_fourier', type=int, default=0, help='Local Fourier refinement terms on top of polynomial (0=off)')
-    parser.add_argument('--local_rbf', type=int, default=0, help='Local RBF bumps on top of polynomial (0=off)')
     parser.add_argument('--opt', type=str, default='rmsprop', choices=OPTIMIZERS)
     parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--decay', type=float, default=0.1)
@@ -57,7 +56,7 @@ def get_config(args):
         'dataset': args.dataset, 'seed': args.seed, 'view': args.view,
         'u_eigen': args.u_eigen, 'i_eigen': args.i_eigen, 'beta': args.beta,
         'f_order': args.f_order, 'f_init': args.f_init, 'poly': args.f_poly,
-        'f_drop': args.f_drop, 'f_act': args.f_act, 'f_jitter': args.local_fourier, 'f_rbf': args.local_rbf,
+        'f_drop': args.f_drop, 'f_act': args.f_act, 'f_jitter': args.local_fourier,
         'opt': args.opt, 'lr': args.lr, 'decay': args.decay,
         'epochs': args.epochs, 'batch_size': args.batch_size,
         'patience': args.patience, 'eval_every': args.eval_every,

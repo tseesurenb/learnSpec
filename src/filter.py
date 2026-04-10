@@ -84,13 +84,12 @@ def normalize_eigenvalues_for_basis(eigenvalues, basis_type='cheby'):
 
 
 class APSFilter(nn.Module):
-    def __init__(self, filter_order=8, init_filter_name='uniform', poly_basis='bernstein', activation='sigmoid', n_jitter=0, n_rbf=0):
+    def __init__(self, filter_order=8, init_filter_name='uniform', poly_basis='bernstein', activation='sigmoid', n_jitter=0):
         super().__init__()
         self.filter_order = filter_order
         self.poly_basis = poly_basis
         self.activation = activation
         self.n_jitter = n_jitter
-        self.n_rbf = n_rbf
         self.coeffs = nn.Parameter(torch.tensor(get_init_coefficients(init_filter_name, filter_order), dtype=torch.float32))
 
         if poly_basis == 'bernstein':
@@ -103,12 +102,6 @@ class APSFilter(nn.Module):
             self.jitter_cos = nn.Parameter(torch.zeros(n_jitter))
             self.jitter_sin = nn.Parameter(torch.zeros(n_jitter))
 
-        # RBF refinement: learnable localized bumps on top of polynomial
-        if n_rbf > 0:
-            self.rbf_amplitude = nn.Parameter(torch.zeros(n_rbf))
-            self.rbf_center = nn.Parameter(torch.linspace(0, 1, n_rbf))
-            self.rbf_log_sigma = nn.Parameter(torch.full((n_rbf,), np.log(0.5 / n_rbf)))
-
         self._cached_eigenvals_id = None
         self._cached_x_normalized = None
 
@@ -119,13 +112,6 @@ class APSFilter(nn.Module):
             freq = (k + 1) * np.pi * x
             jitter = jitter + self.jitter_cos[k] * torch.cos(freq) + self.jitter_sin[k] * torch.sin(freq)
         return jitter
-
-    def _rbf_refinement(self, x):
-        """Evaluate RBF refinement: Σ aₖ exp(-(x - μₖ)² / σₖ²)."""
-        sigma = torch.exp(self.rbf_log_sigma)
-        diffs = x.unsqueeze(-1) - self.rbf_center.unsqueeze(0)
-        rbf = self.rbf_amplitude * torch.exp(-diffs ** 2 / (sigma ** 2 + 1e-8))
-        return rbf.sum(dim=-1)
 
     def forward(self, eigenvals):
         batch_shape = eigenvals.shape
@@ -141,17 +127,12 @@ class APSFilter(nn.Module):
         if self.n_jitter > 0:
             response = response + self._fourier_jitter(self._cached_x_normalized)
 
-        if self.n_rbf > 0:
-            response = response + self._rbf_refinement(self._cached_x_normalized)
-
         return apply_activation(response, self.activation).view(batch_shape)
 
     def get_parameter_groups(self, config):
         groups = [{'params': [self.coeffs], 'name': 'filter_coeffs'}]
         if self.n_jitter > 0:
             groups.append({'params': [self.jitter_cos, self.jitter_sin], 'name': 'filter_jitter'})
-        if self.n_rbf > 0:
-            groups.append({'params': [self.rbf_amplitude, self.rbf_center, self.rbf_log_sigma], 'name': 'filter_rbf'})
         return groups
 
     def get_filter_values(self, n_points=100):
@@ -160,9 +141,52 @@ class APSFilter(nn.Module):
             return x.numpy(), self.forward(x).numpy()
 
 
+class DirectFilter(nn.Module):
+    """One learnable parameter per eigenvalue. Uses actual eigenvalue positions."""
+
+    def __init__(self, n_eigen, init_type='uniform', activation='sigmoid'):
+        super().__init__()
+        self.n_eigen = n_eigen
+        self.activation = activation
+        t = np.linspace(0, 1, n_eigen)
+
+        if init_type == 'lowpass':
+            init_vals = np.linspace(2.0, -2.0, n_eigen)
+        elif init_type == 'highpass':
+            init_vals = np.linspace(-2.0, 2.0, n_eigen)
+        elif init_type == 'bandpass':
+            mid = (n_eigen - 1) / 2.0
+            init_vals = 2.0 * np.exp(-((np.arange(n_eigen) - mid) ** 2) / max(1, n_eigen / 3)) - 1.0
+        elif init_type == 'rise':
+            vals = 0.25 + 0.35 * t
+            init_vals = np.array([_logit(v) for v in vals])
+        elif init_type == 'decay':
+            vals = 0.25 * np.exp(-1.5 * t) + 0.50
+            init_vals = np.array([_logit(v) for v in vals])
+        elif init_type == 'butterworth':
+            vals = 0.40 + 0.35 / (1.0 + (2.0 * t) ** 4)
+            init_vals = np.array([_logit(v) for v in vals])
+        else:  # uniform
+            init_vals = np.zeros(n_eigen)
+
+        self.filter_values = nn.Parameter(torch.tensor(init_vals, dtype=torch.float32))
+
+    def forward(self, eigenvals=None):
+        return apply_activation(self.filter_values, self.activation)
+
+    def get_parameter_groups(self, config):
+        return [{'params': [self.filter_values], 'name': 'direct_filter'}]
+
+    def get_filter_values(self, n_points=None):
+        with torch.no_grad():
+            x = torch.linspace(0, 1, self.n_eigen)
+            return x.numpy(), self.forward().cpu().numpy()
+
+
 def create_filter(order=8, init_type='uniform', config=None):
     poly_basis = config.get('poly', 'bernstein') if config else 'bernstein'
     activation = config.get('f_act', 'sigmoid') if config else 'sigmoid'
     n_jitter = config.get('f_jitter', 0) if config else 0
-    n_rbf = config.get('f_rbf', 0) if config else 0
-    return APSFilter(filter_order=order, init_filter_name=init_type, poly_basis=poly_basis, activation=activation, n_jitter=n_jitter, n_rbf=n_rbf)
+    if poly_basis == 'direct':
+        return DirectFilter(n_eigen=config.get('n_eigen', order), init_type=init_type, activation=activation)
+    return APSFilter(filter_order=order, init_filter_name=init_type, poly_basis=poly_basis, activation=activation, n_jitter=n_jitter)
