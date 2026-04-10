@@ -84,12 +84,13 @@ def normalize_eigenvalues_for_basis(eigenvalues, basis_type='cheby'):
 
 
 class APSFilter(nn.Module):
-    def __init__(self, filter_order=8, init_filter_name='uniform', poly_basis='bernstein', activation='sigmoid', n_jitter=0):
+    def __init__(self, filter_order=8, init_filter_name='uniform', poly_basis='bernstein', activation='sigmoid', n_jitter=0, n_rbf=0):
         super().__init__()
         self.filter_order = filter_order
         self.poly_basis = poly_basis
         self.activation = activation
         self.n_jitter = n_jitter
+        self.n_rbf = n_rbf
         self.coeffs = nn.Parameter(torch.tensor(get_init_coefficients(init_filter_name, filter_order), dtype=torch.float32))
 
         if poly_basis == 'bernstein':
@@ -97,21 +98,34 @@ class APSFilter(nn.Module):
         else:
             self._binomials = None
 
-        # Fourier jitter: learnable bumps on top of polynomial
+        # Fourier refinement: learnable oscillations on top of polynomial
         if n_jitter > 0:
             self.jitter_cos = nn.Parameter(torch.zeros(n_jitter))
             self.jitter_sin = nn.Parameter(torch.zeros(n_jitter))
+
+        # RBF refinement: learnable localized bumps on top of polynomial
+        if n_rbf > 0:
+            self.rbf_amplitude = nn.Parameter(torch.zeros(n_rbf))
+            self.rbf_center = nn.Parameter(torch.linspace(0, 1, n_rbf))
+            self.rbf_log_sigma = nn.Parameter(torch.full((n_rbf,), np.log(0.5 / n_rbf)))
 
         self._cached_eigenvals_id = None
         self._cached_x_normalized = None
 
     def _fourier_jitter(self, x):
-        """Evaluate Fourier jitter: Σ aₖcos(kπx) + bₖsin(kπx)."""
+        """Evaluate Fourier refinement: Σ aₖcos(kπx) + bₖsin(kπx)."""
         jitter = torch.zeros_like(x)
         for k in range(self.n_jitter):
             freq = (k + 1) * np.pi * x
             jitter = jitter + self.jitter_cos[k] * torch.cos(freq) + self.jitter_sin[k] * torch.sin(freq)
         return jitter
+
+    def _rbf_refinement(self, x):
+        """Evaluate RBF refinement: Σ aₖ exp(-(x - μₖ)² / σₖ²)."""
+        sigma = torch.exp(self.rbf_log_sigma)
+        diffs = x.unsqueeze(-1) - self.rbf_center.unsqueeze(0)
+        rbf = self.rbf_amplitude * torch.exp(-diffs ** 2 / (sigma ** 2 + 1e-8))
+        return rbf.sum(dim=-1)
 
     def forward(self, eigenvals):
         batch_shape = eigenvals.shape
@@ -127,12 +141,17 @@ class APSFilter(nn.Module):
         if self.n_jitter > 0:
             response = response + self._fourier_jitter(self._cached_x_normalized)
 
+        if self.n_rbf > 0:
+            response = response + self._rbf_refinement(self._cached_x_normalized)
+
         return apply_activation(response, self.activation).view(batch_shape)
 
     def get_parameter_groups(self, config):
         groups = [{'params': [self.coeffs], 'name': 'filter_coeffs'}]
         if self.n_jitter > 0:
             groups.append({'params': [self.jitter_cos, self.jitter_sin], 'name': 'filter_jitter'})
+        if self.n_rbf > 0:
+            groups.append({'params': [self.rbf_amplitude, self.rbf_center, self.rbf_log_sigma], 'name': 'filter_rbf'})
         return groups
 
     def get_filter_values(self, n_points=100):
@@ -145,4 +164,5 @@ def create_filter(order=8, init_type='uniform', config=None):
     poly_basis = config.get('poly', 'bernstein') if config else 'bernstein'
     activation = config.get('f_act', 'sigmoid') if config else 'sigmoid'
     n_jitter = config.get('f_jitter', 0) if config else 0
-    return APSFilter(filter_order=order, init_filter_name=init_type, poly_basis=poly_basis, activation=activation, n_jitter=n_jitter)
+    n_rbf = config.get('f_rbf', 0) if config else 0
+    return APSFilter(filter_order=order, init_filter_name=init_type, poly_basis=poly_basis, activation=activation, n_jitter=n_jitter, n_rbf=n_rbf)
