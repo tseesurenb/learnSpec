@@ -37,6 +37,8 @@ def parse_args():
     parser.add_argument('--log', action='store_true', default=False, help='Log detailed filter state at each eval step')
     parser.add_argument('--split_ratio', type=float, default=0.7, help='Train/val split ratio for sub-eigenspace learning')
     parser.add_argument('--f_reg', type=float, default=0.0, help='Frequency-aware smoothness regularization weight')
+    parser.add_argument('--mse_weight', type=float, default=0.0, help='MSE loss weight combined with BPR (0=BPR only)')
+    parser.add_argument('--no_bpr', action='store_true', default=False, help='Disable BPR loss, use MSE only')
     parser.add_argument('--device', type=str, default='auto', choices=['auto', 'cpu', 'cuda'])
     return parser.parse_args()
 
@@ -60,7 +62,7 @@ def get_config(args):
         'epochs': args.epochs, 'batch_size': args.batch_size,
         'patience': args.patience, 'eval_every': args.eval_every,
         'split_ratio': args.split_ratio,
-        'f_reg': args.f_reg,
+        'f_reg': args.f_reg, 'mse_weight': args.mse_weight, 'no_bpr': args.no_bpr,
         'infer': args.infer, 'save': args.save, 'log': args.log,
         'device': device, 'topks': [20],
     }
