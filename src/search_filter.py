@@ -16,11 +16,10 @@ import time
 from itertools import product
 from main import main as run_experiment
 
-INITS = ['uniform', 'lowpass', 'highpass', 'bandpass', 'butterworth', 'bandreject', 'decay', 'rise', 'plateau']
-DIRECT_INITS = ['uniform', 'lowpass', 'highpass', 'bandpass']
+INITS = ['uniform', 'lowpass', 'highpass', 'bandpass', 'butterworth', 'decay', 'rise']
 ORDERS = [4, 8, 16, 24, 32]
-ACTIVATIONS = ['sigmoid', 'softplus', 'tanh', 'none']
-POLYS = ['bernstein', 'cheby', 'direct']
+ACTIVATIONS = ['sigmoid', 'softplus']
+POLYS = ['bernstein', 'cheby']
 
 LRS = [0.0005, 0.001, 0.002, 0.005]
 DECAYS = [0.001, 0.01, 0.1]
@@ -32,8 +31,8 @@ def parse_args():
     parser.add_argument('--u_eigen', type=int, required=True)
     parser.add_argument('--i_eigen', type=int, required=True)
     parser.add_argument('--beta', type=float, default=0.5)
-    parser.add_argument('--model', type=str, default='all', choices=['all', 'bernstein', 'cheby', 'direct'],
-                        help='Filter type to search: all, bernstein, cheby, or direct')
+    parser.add_argument('--model', type=str, default='all', choices=['all', 'bernstein', 'cheby'],
+                        help='Filter type to search: all, bernstein, or cheby')
     parser.add_argument('--stage', type=int, required=True, choices=[1, 2], help='1=infer search, 2=training search')
     parser.add_argument('--top_k', type=int, default=5, help='Top configs from stage 1 to use in stage 2')
     parser.add_argument('--device', type=str, default='auto')
@@ -45,27 +44,12 @@ def build_stage1_configs(args):
     polys = POLYS if args.model == 'all' else [args.model]
     configs = []
     for poly in polys:
-        if poly == 'direct':
-            for init, act in product(DIRECT_INITS, ACTIVATIONS):
-                configs.append({
-                    'dataset': args.dataset, 'seed': 42, 'view': 'ui',
-                    'u_eigen': args.u_eigen, 'i_eigen': args.i_eigen, 'beta': args.beta,
-                    'f_order': 32, 'f_init': init, 'poly': poly,
-                    'f_dropout': 0.0, 'f_act': act,
-                    'opt': 'rmsprop', 'lr': 0.001, 'decay': 0.01,
-                    'epochs': 200, 'batch_size': 1024,
-                    'patience': 10, 'eval_every': 5,
-                    'split_ratio': 0.7,
-                    'infer': True, 'save': False,
-                    'device': args.device, 'topks': [20],
-                })
-        else:
-            for init, order, act in product(INITS, ORDERS, ACTIVATIONS):
+        for init, order, act in product(INITS, ORDERS, ACTIVATIONS):
                 configs.append({
                     'dataset': args.dataset, 'seed': 42, 'view': 'ui',
                     'u_eigen': args.u_eigen, 'i_eigen': args.i_eigen, 'beta': args.beta,
                     'f_order': order, 'f_init': init, 'poly': poly,
-                    'f_dropout': 0.0, 'f_act': act,
+                    'f_act': act,
                     'opt': 'rmsprop', 'lr': 0.001, 'decay': 0.01,
                     'epochs': 200, 'batch_size': 1024,
                     'patience': 10, 'eval_every': 5,
@@ -126,7 +110,7 @@ def load_stage1_results(csv_path, top_k=5):
             'dataset': r['dataset'], 'seed': 42, 'view': 'ui',
             'u_eigen': int(r['u_eigen']), 'i_eigen': int(r['i_eigen']), 'beta': float(r['beta']),
             'f_order': int(r['f_order']), 'f_init': r['f_init'], 'poly': r['f_poly'],
-            'f_dropout': 0.0, 'f_act': r['f_act'],
+            'f_act': r['f_act'],
             'opt': 'rmsprop', 'batch_size': 1024, 'eval_every': 5,
             'split_ratio': 0.7, 'save': False,
             'device': r.get('device', 'auto'), 'topks': [20],

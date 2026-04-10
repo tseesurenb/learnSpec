@@ -227,10 +227,6 @@ def _apply_activation(x, act_type='sigmoid'):
     import torch
     if act_type == 'softplus':
         return torch.nn.functional.softplus(x)
-    elif act_type == 'tanh':
-        return (torch.tanh(x) + 1) / 2
-    elif act_type == 'none':
-        return x
     else:  # sigmoid
         return torch.sigmoid(x)
 
@@ -296,20 +292,6 @@ def evaluate_saved_filter(eigenvals, filter_state_dict, poly_basis='bernstein', 
 
     # Fallback
     return np.ones_like(eigenvals) * 0.5
-
-
-def evaluate_direct_filter(filter_state_dict, activation='sigmoid'):
-    """Evaluate a saved DirectFilter from its state dict.
-
-    DirectFilter stores one learnable parameter per eigenvalue in 'filter.filter_values'.
-    Returns the activated filter response.
-    """
-    import torch
-    filter_values = filter_state_dict['filter.filter_values']
-    if not isinstance(filter_values, torch.Tensor):
-        filter_values = torch.tensor(filter_values, dtype=torch.float32)
-    response = _apply_activation(filter_values, activation).detach().numpy()
-    return response
 
 
 def evaluate_reference_filter(eigenvals, filter_name, steepness=5.0, center=0.5):
@@ -755,14 +737,11 @@ else:
 
     # Detect filter type and activation from saved config
     saved_config = initial.get('config', {})
-    is_direct = saved_config.get('f_poly', saved_config.get('poly', '')) == 'direct'
     saved_act = saved_config.get('f_act', 'sigmoid')
 
     has_user_filter = best.get('user_filter') or initial.get('user_filter')
-    is_apsf = (not is_direct) and has_user_filter
-    is_direct_filter = is_direct and has_user_filter
 
-    if is_apsf or is_direct_filter:
+    if has_user_filter:
         st.caption(f"Best epoch: {best.get('epoch')} | val NDCG: {best.get('ndcg', 0):.4f} | "
                    f"test NDCG: {best.get('test_ndcg', 0):.4f} | test Recall: {best.get('test_recall', 0):.4f}")
 
@@ -809,151 +788,7 @@ else:
             current_item_filter = best.get('item_filter')
             current_ndcg = best.get('ndcg', 0)
 
-    if is_direct_filter and not is_apsf:
-        # === DirectFilter visualization ===
-        n_eigen = len(initial.get('user_filter', {}).get('filter.filter_values', []))
-
-        init_response = evaluate_direct_filter(initial.get('user_filter', {}), saved_act)
-
-        if epoch_snapshots:
-            sel_response = evaluate_direct_filter(current_user_filter, saved_act)
-        else:
-            sel_response = evaluate_direct_filter(best.get('user_filter', {}), saved_act)
-
-        # X-axis: eigenvalue index (evenly spaced, 1=largest/low-freq, n=smallest/high-freq)
-        # Eigenvalues are sorted descending, so index 1 = largest eigenvalue = lowest frequency
-        x_plot = np.arange(1, n_eigen + 1)
-        x_label = "Eigenvalue index (1=largest/low-freq → N=smallest/high-freq)"
-        bar_width = 0.8
-
-        # Shared y-axis range across all plots
-        y_max = max(init_response.max(), sel_response.max()) * 1.1
-
-        # Row 1: Initial vs Selected filter response
-        col1, col2 = st.columns(2)
-
-        with col1:
-            fig, ax = plt.subplots(figsize=(6, 4))
-            ax.bar(x_plot, init_response, width=bar_width, color='steelblue', alpha=0.8)
-            ax.set_xlabel(x_label)
-            ax.set_ylabel("h(λ)")
-            ax.set_title("Initial (before training)")
-            ax.set_ylim(0, y_max)
-            st.pyplot(fig)
-            plt.close()
-            st.caption(f"Direct filter: {n_eigen} learnable parameters (1 per eigenvalue)")
-
-        with col2:
-            fig, ax = plt.subplots(figsize=(6, 4))
-            ax.bar(x_plot, sel_response, width=bar_width, color='red', alpha=0.8)
-            ax.set_xlabel(x_label)
-            ax.set_ylabel("h(λ)")
-            ax.set_title(current_label)
-            ax.set_ylim(0, y_max)
-            st.pyplot(fig)
-            plt.close()
-
-        # Row 2: Overlay + diff
-        col1, col2 = st.columns(2)
-
-        with col1:
-            fig, ax = plt.subplots(figsize=(6, 4))
-            ax.bar(x_plot - 0.2, init_response, width=0.4, color='steelblue', alpha=0.7, label='Initial')
-            ax.bar(x_plot + 0.2, sel_response, width=0.4, color='red', alpha=0.7, label=current_label)
-            ax.set_xlabel(x_label)
-            ax.set_ylabel("h(λ)")
-            ax.set_title("Direct Filter: Initial vs Selected")
-            ax.legend(fontsize=9)
-            ax.set_ylim(0, y_max)
-            st.pyplot(fig)
-            plt.close()
-
-        with col2:
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 4), height_ratios=[1, 1], sharex=True)
-            fig.subplots_adjust(hspace=0.3)
-
-            diff = sel_response - init_response
-            ax1.bar(x_plot, diff, width=bar_width,
-                    color=['green' if d > 0 else 'red' for d in diff], alpha=0.6)
-            ax1.axhline(y=0, color='black', linewidth=0.5)
-            ax1.set_ylabel("Change")
-            ax1.set_title(f"Learning effect ({current_label} - initial)", fontsize=10)
-
-            ax2.bar(x_plot - 0.2, init_response, width=0.4,
-                    color='steelblue', alpha=0.6, label='Initial')
-            ax2.bar(x_plot + 0.2, sel_response, width=0.4,
-                    color='red', alpha=0.6, label='Learned')
-            ax2.set_xlabel(x_label)
-            ax2.set_ylabel("h(λ)")
-            ax2.legend(fontsize=7, loc='upper left')
-            ax2.set_ylim(0, y_max)
-            ax2.set_xlim(0, 1)
-            ax2.set_ylim(0, y_max)
-
-            st.pyplot(fig)
-            plt.close()
-
-        # NDCG progression
-        if epoch_snapshots:
-            st.subheader("Training Progression")
-            epoch_nums = [s['epoch'] for s in epoch_snapshots]
-            val_ndcgs = [s.get('val_ndcg', 0) for s in epoch_snapshots]
-
-            fig, ax = plt.subplots(figsize=(10, 3))
-            ax.plot(epoch_nums, val_ndcgs, color='steelblue', linewidth=1.5)
-            ax.axvline(x=best_epoch, color='red', linestyle='--', alpha=0.7, label=f'Best (ep {best_epoch})')
-            if selected_epoch > 0:
-                ax.axvline(x=selected_epoch, color='orange', linestyle='--', alpha=0.7, label=f'Selected (ep {selected_epoch})')
-            ax.set_xlabel("Epoch")
-            ax.set_ylabel("val NDCG")
-            ax.set_title("Validation NDCG over epochs")
-            ax.legend(fontsize=8)
-            st.pyplot(fig)
-            plt.close()
-
-        # Item view for direct filter
-        if current_item_filter and initial.get('item_filter'):
-            st.subheader("Item View")
-            i_init_response = evaluate_direct_filter(initial['item_filter'], saved_act)
-            i_sel_response = evaluate_direct_filter(current_item_filter, saved_act)
-            n_i_eigen = len(i_init_response)
-            i_x_plot = np.arange(1, n_i_eigen + 1)
-            i_y_max = max(i_init_response.max(), i_sel_response.max()) * 1.1
-
-            col1, col2 = st.columns(2)
-            with col1:
-                fig, ax = plt.subplots(figsize=(6, 4))
-                ax.bar(i_x_plot - 0.2, i_init_response, width=0.4, color='steelblue', alpha=0.7, label='Initial')
-                ax.bar(i_x_plot + 0.2, i_sel_response, width=0.4, color='red', alpha=0.7, label=current_label)
-                ax.set_xlabel(x_label)
-                ax.set_ylabel("h(λ)")
-                ax.set_title("Item View: Initial vs Selected")
-                ax.legend(fontsize=9)
-                ax.set_ylim(0, i_y_max)
-                st.pyplot(fig)
-                plt.close()
-
-            with col2:
-                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 4), height_ratios=[1, 1], sharex=True)
-                fig.subplots_adjust(hspace=0.3)
-                i_diff = i_sel_response - i_init_response
-                ax1.bar(i_x_plot, i_diff, width=0.8,
-                        color=['green' if d > 0 else 'red' for d in i_diff], alpha=0.6)
-                ax1.axhline(y=0, color='black', linewidth=0.5)
-                ax1.set_ylabel("Change")
-                ax1.set_title("Item View: Learning effect", fontsize=10)
-                ax2.bar(i_x_plot - 0.2, i_init_response, width=0.4,
-                        color='steelblue', alpha=0.6, label='Initial')
-                ax2.bar(i_x_plot + 0.2, i_sel_response, width=0.4,
-                        color='red', alpha=0.6, label='Learned')
-                ax2.set_xlabel(x_label)
-                ax2.set_ylabel("h(λ)")
-                ax2.legend(fontsize=7, loc='upper left')
-                ax2.set_ylim(0, i_y_max)
-                st.pyplot(fig)
-                plt.close()
-
-    elif is_apsf:
+    if has_user_filter:
         # === Polynomial filter visualization ===
         lam_norm_plot = eigenvals_used / eigenvals_used.max() if eigenvals_used.max() > 0 else eigenvals_used
         saved_poly = saved_config.get('f_poly', saved_config.get('poly', 'bernstein'))

@@ -4,11 +4,10 @@ import torch
 SPLIT_RATIO = 0.7
 SPLIT_SEED = 42
 
-INIT_TYPES = ['uniform', 'lowpass', 'highpass', 'bandpass', 'butterworth', 'bandreject', 'decay', 'rise', 'plateau']
+INIT_TYPES = ['uniform', 'lowpass', 'highpass', 'bandpass', 'butterworth', 'decay', 'rise']
 DATASETS = ['ml-100k', 'lastfm', 'gowalla', 'yelp2018', 'amazon-book']
 OPTIMIZERS = ['rmsprop', 'adam']
-LOSSES = ['bpr', 'bce']
-POLYNOMIAL_BASIS = ['bernstein', 'cheby', 'direct']
+POLYNOMIAL_BASIS = ['bernstein', 'cheby']
 
 
 def parse_args():
@@ -16,15 +15,15 @@ def parse_args():
     parser.add_argument('--dataset', type=str, default='ml-100k', choices=DATASETS)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--view', type=str, default='ui', help='u=user, i=item, ui=both')
-    parser.add_argument('--u_eigen', type=int, default=25)
-    parser.add_argument('--i_eigen', type=int, default=130)
-    parser.add_argument('--beta', type=float, default=0.5)
+    parser.add_argument('--u_eigen', type=int, default=20)
+    parser.add_argument('--i_eigen', type=int, default=50)
+    parser.add_argument('--beta', type=float, default=0.3)
     parser.add_argument('--f_order', type=int, default=32)
     parser.add_argument('--f_init', type=str, default='lowpass', choices=INIT_TYPES)
     parser.add_argument('--f_poly', type=str, default='bernstein', choices=POLYNOMIAL_BASIS)
-    parser.add_argument('--f_dropout', type=float, default=0.0)
-    parser.add_argument('--f_act', type=str, default='sigmoid', choices=['sigmoid', 'softplus', 'tanh', 'none'])
-    parser.add_argument('--loss', type=str, default='bpr', choices=LOSSES)
+    parser.add_argument('--f_drop', type=float, default=0.0, help='Spectral dropout: probability of masking eigencomponents during training')
+    parser.add_argument('--f_act', type=str, default='sigmoid', choices=['sigmoid', 'softplus'])
+    parser.add_argument('--f_jitter', type=int, default=0, help='Fourier jitter terms on top of polynomial (0=off)')
     parser.add_argument('--opt', type=str, default='rmsprop', choices=OPTIMIZERS)
     parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--decay', type=float, default=0.1)
@@ -36,9 +35,7 @@ def parse_args():
     parser.add_argument('--save', action='store_true', default=False)
     parser.add_argument('--log', action='store_true', default=False, help='Log detailed filter state at each eval step')
     parser.add_argument('--split_ratio', type=float, default=0.7, help='Train/val split ratio for sub-eigenspace learning')
-    parser.add_argument('--spec_consist', type=float, default=0.0, help='Spectral consistency regularization weight')
     parser.add_argument('--f_reg', type=float, default=0.0, help='Frequency-aware smoothness regularization weight')
-    parser.add_argument('--spec_dropout', type=float, default=0.0, help='Spectral dropout: probability of masking eigencomponents during training')
     parser.add_argument('--device', type=str, default='auto', choices=['auto', 'cpu', 'cuda'])
     return parser.parse_args()
 
@@ -57,13 +54,12 @@ def get_config(args):
         'dataset': args.dataset, 'seed': args.seed, 'view': args.view,
         'u_eigen': args.u_eigen, 'i_eigen': args.i_eigen, 'beta': args.beta,
         'f_order': args.f_order, 'f_init': args.f_init, 'poly': args.f_poly,
-        'f_dropout': args.f_dropout, 'f_act': args.f_act,
-        'loss': args.loss, 'opt': args.opt, 'lr': args.lr, 'decay': args.decay,
+        'f_drop': args.f_drop, 'f_act': args.f_act, 'f_jitter': args.f_jitter,
+        'opt': args.opt, 'lr': args.lr, 'decay': args.decay,
         'epochs': args.epochs, 'batch_size': args.batch_size,
         'patience': args.patience, 'eval_every': args.eval_every,
         'split_ratio': args.split_ratio,
-        'spec_consist': args.spec_consist, 'f_reg': args.f_reg,
-        'spec_dropout': args.spec_dropout,
+        'f_reg': args.f_reg,
         'infer': args.infer, 'save': args.save, 'log': args.log,
         'device': device, 'topks': [20],
     }

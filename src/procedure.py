@@ -4,7 +4,7 @@ import utils
 
 
 
-def train_spectral(validation_data, model, optimizer, batch_size=1000, loss_type='bpr', spec_consist=0.0, f_reg=0.0):
+def train_spectral(validation_data, model, optimizer, batch_size=1000, f_reg=0.0):
     model.train()
     users_with_validation = [u for u, items in validation_data.items() if len(items) > 0]
     if len(users_with_validation) == 0:
@@ -48,17 +48,7 @@ def train_spectral(validation_data, model, optimizer, batch_size=1000, loss_type
         pos_scores = predicted[range(bs), pos_idx]
         neg_scores = predicted[range(bs), neg_idx]
 
-        if loss_type == 'bce':
-            loss = (-torch.nn.functional.logsigmoid(pos_scores)
-                    - torch.nn.functional.logsigmoid(-neg_scores)).mean()
-        else:  # bpr
-            loss = torch.nn.functional.softplus(neg_scores - pos_scores).mean()
-
-        # Spectral consistency: penalize difference between full and reduced eigencomponent predictions
-        if spec_consist > 0:
-            predicted_reduced = model.forward_selective_reduced(users, target_items, keep_ratio=0.5)
-            consist_loss = torch.nn.functional.mse_loss(predicted_reduced, predicted.detach())
-            loss = loss + spec_consist * consist_loss
+        loss = torch.nn.functional.softplus(neg_scores - pos_scores).mean()
 
         # Frequency-aware regularization: penalize abrupt changes in filter response
         if f_reg > 0:
@@ -80,9 +70,6 @@ def train_spectral(validation_data, model, optimizer, batch_size=1000, loss_type
     return total_loss
 
 
-# Legacy aliases
-BPR_train_spectral = lambda *a, **kw: train_spectral(*a, **kw, loss_type='bpr')
-BCE_train_spectral = lambda *a, **kw: train_spectral(*a, **kw, loss_type='bce')
 
 
 def evaluate(dataset, model, split='test', batch_size=1000):

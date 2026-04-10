@@ -72,7 +72,7 @@ python main.py --dataset ml-100k --f_poly cheby --f_init lowpass --beta 0.3 --u_
 src/
 ├── main.py              # Training and evaluation entry point
 ├── model.py             # LearnSpecCF model
-├── filter.py            # Spectral filters (APSFilter, DirectFilter, AdaptiveFilter)
+├── filter.py            # Spectral filters (APSFilter)
 ├── procedure.py         # Training loop (MSE) and evaluation (NDCG, Recall)
 ├── config.py            # CLI args and configuration
 ├── utils.py             # Utilities (metrics, data splits, I/O)
@@ -100,10 +100,10 @@ src/
 | `--u_eigen` | 25 | Number of user eigenvalues |
 | `--i_eigen` | 130 | Number of item eigenvalues |
 | `--beta` | 0.5 | Degree normalization exponent |
-| `--f_poly` | bernstein | Filter type: bernstein, cheby, direct, adaptive |
+| `--f_poly` | bernstein | Filter type: bernstein, cheby |
 | `--f_order` | 32 | Polynomial order (K+1 coefficients) |
 | `--f_init` | bandpass | Init shape: uniform, lowpass, highpass, bandpass |
-| `--f_act` | sigmoid | Activation: sigmoid, softplus, tanh, none |
+| `--f_act` | sigmoid | Activation: sigmoid, softplus |
 | `--opt` | rmsprop | Optimizer: rmsprop, adam |
 | `--lr` | 0.001 | Learning rate |
 | `--decay` | 0 | Weight decay |
@@ -135,8 +135,6 @@ src/
 |------|-----------|--------|-------------|
 | Polynomial (Bernstein) | `bernstein` | K+1 | Smooth spectral filter on [0,1] |
 | Polynomial (Chebyshev) | `cheby` | K+1 | Spectral filter on [-1,1] |
-| Direct | `direct` | n_eigen | One free parameter per eigenvalue |
-| Adaptive | `adaptive` | K+1 + n_eigen | Polynomial + per-eigenvalue corrections |
 
 ## Data Format
 

@@ -242,7 +242,7 @@ After sigmoid: values in (0, 1). Higher = keep more of that spectral component.
 
 filter_init = st.selectbox("Filter initialization",
                            ['uniform', 'lowpass', 'highpass', 'bandpass', 'rise', 'butterworth'])
-filter_act = st.selectbox("Activation function", ['sigmoid', 'softplus', 'tanh', 'none'])
+filter_act = st.selectbox("Activation function", ['sigmoid', 'softplus'])
 
 def get_init_values(init_type, n):
     t = np.linspace(0, 1, n)
@@ -263,14 +263,10 @@ def get_init_values(init_type, n):
         return np.zeros(n)
 
 def apply_act(x, act):
-    if act == 'sigmoid':
-        return 1 / (1 + np.exp(-x))
-    elif act == 'softplus':
+    if act == 'softplus':
         return np.log(1 + np.exp(x))
-    elif act == 'tanh':
-        return (np.tanh(x) + 1) / 2
-    else:
-        return x
+    else:  # sigmoid
+        return 1 / (1 + np.exp(-x))
 
 # User filter
 coeffs_u = get_init_values(filter_init, k_u)

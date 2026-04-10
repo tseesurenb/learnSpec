@@ -1,0 +1,9 @@
+{
+  "best_epoch": 1,
+  "baseline_ndcg": 0.1555158375012502,
+  "final_ndcg": 0.1557112242915459,
+  "ndcg_improvement_pct": 0.1256378729234786,
+  "baseline_recall": 0.1896129455241239,
+  "final_recall": 0.1897283530884942,
+  "n_snapshots": 12
+}

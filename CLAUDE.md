@@ -53,10 +53,10 @@ python main.py --dataset yelp2018 --u_eigen 300 --i_eigen 2000 --beta 0.4 --infe
 | `--beta` | 0.5 | Degree normalization for both views |
 | `--u_beta` | None | Override beta for user view only |
 | `--i_beta` | None | Override beta for item view only |
-| `--f_poly` | bernstein | Filter type: bernstein, cheby, direct, adaptive |
+| `--f_poly` | bernstein | Filter type: bernstein, cheby |
 | `--f_order` | 32 | Polynomial order K (K+1 learnable coefficients) |
 | `--f_init` | uniform | Initial filter shape: uniform, lowpass, highpass, bandpass |
-| `--f_dropout` | 0.0 | Dropout for direct filter (e.g. 0.6) |
+| `--f_drop` | 0.0 | Spectral dropout: probability of masking eigencomponents |
 | `--optimizer` | rmsprop | Optimizer: rmsprop, adam |
 | `--lr` | 0.001 | Learning rate |
 | `--decay` | 0 | Weight decay (L2 regularization) |
@@ -74,8 +74,6 @@ python main.py --dataset yelp2018 --u_eigen 300 --i_eigen 2000 --beta 0.4 --infe
 3. **Filter** (`filters.py`): Single polynomial filter with sigmoid activation. Filter types:
    - `bernstein`: Bernstein polynomial basis on [0,1]
    - `cheby`: Chebyshev polynomial basis on [-1,1]
-   - `direct`: One learnable parameter per eigenvalue
-   - `adaptive`: Bernstein polynomial + per-eigenvalue corrections
 4. **Training** (`procedure.py` -> `MSE_train_spectral`): MSE loss on validation interactions. Training data split 70/30 (train/validation), learns filter parameters, then evaluates on test with full data.
 5. **Evaluation** (`procedure.py` -> `Test`, `Test_val`): Computes NDCG@20, Recall@20, Precision@20.
 

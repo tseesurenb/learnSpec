@@ -49,10 +49,10 @@ def make_config(dataset_name, u_eigen, i_eigen, beta, device):
         'dataset': dataset_name, 'seed': 42, 'view': 'ui',
         'u_eigen': u_eigen, 'i_eigen': i_eigen, 'beta': beta,
         'f_order': 8, 'f_init': 'uniform', 'poly': 'bernstein',
-        'f_dropout': 0.0, 'f_act': 'sigmoid',
+        'f_act': 'sigmoid',
         'opt': 'rmsprop', 'lr': 0.01, 'decay': 1e-5,
         'epochs': 0, 'batch_size': 1000, 'patience': 5,
-        'device': device, 'loss': 'mse', 'topks': [20],
+        'device': device, 'topks': [20],
     }
 
 
