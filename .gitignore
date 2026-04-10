@@ -9,6 +9,7 @@ results/
 runs/
 exp/
 paper/
+logs/
 
 # Baselines
 baselines/
