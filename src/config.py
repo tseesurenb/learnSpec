@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument('--beta', type=float, default=0.4)
     parser.add_argument('--f_order', type=int, default=32)
     parser.add_argument('--f_init', type=str, default='lowpass', choices=INIT_TYPES)
-    parser.add_argument('--f_poly', type=str, default='bernstein', choices=POLYNOMIAL_BASIS)
+    parser.add_argument('--f_poly', type=str, default='direct', choices=POLYNOMIAL_BASIS)
     parser.add_argument('--f_drop', type=float, default=0.0, help='Spectral dropout: probability of masking eigencomponents during training')
     parser.add_argument('--f_act', type=str, default='sigmoid', choices=['sigmoid', 'softplus'])
     parser.add_argument('--opt', type=str, default='adam', choices=OPTIMIZERS)
