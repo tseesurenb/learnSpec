@@ -33,10 +33,11 @@ def main(config_override=None):
     ut.set_seed(config['seed'])
 
     sr = config.get('split_ratio', 0.7)
-    print(f"LearnSpec: {config['dataset']}({sr}) | {config['view']} | {config['poly']}(K={config['f_order']}) | "
+    poly_info = f"{config['poly']}(u={config['u_eigen']},i={config['i_eigen']})" if config['poly'] == 'direct' else f"{config['poly']}(K={config['f_order']})"
+    print(f"LearnSpec: {config['dataset']}({sr}) | {config['view']} | {poly_info} | "
           f"init={config['f_init']} | act={config['f_act']} | "
           f"u={config['u_eigen']},i={config['i_eigen']} | beta={config['beta']} | "
-          f"BPR | {config['opt']}(lr={config['lr']}, decay={config['decay']}) | "
+          f"{config.get('loss','bpr').upper()} | {config['opt']}(lr={config['lr']}, decay={config['decay']}) | "
           f"patience={config['patience']} | {config['device']}")
 
     dataset = ut.load_dataset(config)
@@ -84,8 +85,7 @@ def main(config_override=None):
         loss = pr.train_spectral(validation_data, model, optimizer,
                                  batch_size=config['batch_size'],
                                  f_reg=config.get('f_reg', 0.0),
-                                 mse_weight=config.get('mse_weight', 0.0),
-                                 no_bpr=config.get('no_bpr', False))
+                                 loss_type=config.get('loss', 'bpr'))
 
         if (epoch + 1) % eval_every != 0 and epoch > 0:
             print(f"\rEpoch {epoch+1:0{ew}d}/{config['epochs']} | Loss: {loss:.4f}    ", end='', flush=True)
@@ -150,9 +150,10 @@ def main(config_override=None):
     ndcg_pct = (final_ndcg / baseline_ndcg - 1) * 100
     recall_pct = (final_recall / baseline_recall - 1) * 100
     print(f"\n{C.BOLD}RESULTS (best epoch {best_epoch}):{C.END}")
-    print(f"Config:   {config['dataset']}({config.get('split_ratio',0.7)}) | {config['poly']}(K={config['f_order']}) | init={config['f_init']} | act={config['f_act']} | "
+    poly_info2 = f"{config['poly']}(u={config['u_eigen']},i={config['i_eigen']})" if config['poly'] == 'direct' else f"{config['poly']}(K={config['f_order']})"
+    print(f"Config:   {config['dataset']}({config.get('split_ratio',0.7)}) | {poly_info2} | init={config['f_init']} | act={config['f_act']} | "
           f"u={config['u_eigen']},i={config['i_eigen']} | beta={config['beta']} | "
-          f"BPR | {config['opt']}(lr={config['lr']}, decay={config['decay']})")
+          f"{config.get('loss','bpr').upper()} | {config['opt']}(lr={config['lr']}, decay={config['decay']})")
     print(f"{C.B}{C.BOLD}Baseline: NDCG={baseline_ndcg:.4f}, Recall={baseline_recall:.4f}{C.END}")
     print(f"Final:    {C.G if ndcg_pct > 0 else C.R}NDCG={final_ndcg:.4f} ({ndcg_pct:+.1f}%){C.END}, "
           f"{C.G if recall_pct > 0 else C.R}Recall={final_recall:.4f} ({recall_pct:+.1f}%){C.END}")

@@ -84,12 +84,11 @@ def normalize_eigenvalues_for_basis(eigenvalues, basis_type='cheby'):
 
 
 class APSFilter(nn.Module):
-    def __init__(self, filter_order=8, init_filter_name='uniform', poly_basis='bernstein', activation='sigmoid', n_jitter=0):
+    def __init__(self, filter_order=8, init_filter_name='uniform', poly_basis='bernstein', activation='sigmoid'):
         super().__init__()
         self.filter_order = filter_order
         self.poly_basis = poly_basis
         self.activation = activation
-        self.n_jitter = n_jitter
         self.coeffs = nn.Parameter(torch.tensor(get_init_coefficients(init_filter_name, filter_order), dtype=torch.float32))
 
         if poly_basis == 'bernstein':
@@ -97,21 +96,8 @@ class APSFilter(nn.Module):
         else:
             self._binomials = None
 
-        # Fourier refinement: learnable oscillations on top of polynomial
-        if n_jitter > 0:
-            self.jitter_cos = nn.Parameter(torch.zeros(n_jitter))
-            self.jitter_sin = nn.Parameter(torch.zeros(n_jitter))
-
         self._cached_eigenvals_id = None
         self._cached_x_normalized = None
-
-    def _fourier_jitter(self, x):
-        """Evaluate Fourier refinement: Σ aₖcos(kπx) + bₖsin(kπx)."""
-        jitter = torch.zeros_like(x)
-        for k in range(self.n_jitter):
-            freq = (k + 1) * np.pi * x
-            jitter = jitter + self.jitter_cos[k] * torch.cos(freq) + self.jitter_sin[k] * torch.sin(freq)
-        return jitter
 
     def forward(self, eigenvals):
         batch_shape = eigenvals.shape
@@ -123,17 +109,10 @@ class APSFilter(nn.Module):
             self._cached_eigenvals_id = ev_id
 
         response = evaluate_polynomial_basis(self.coeffs, self._cached_x_normalized, self.poly_basis, self._binomials)
-
-        if self.n_jitter > 0:
-            response = response + self._fourier_jitter(self._cached_x_normalized)
-
         return apply_activation(response, self.activation).view(batch_shape)
 
     def get_parameter_groups(self, config):
-        groups = [{'params': [self.coeffs], 'name': 'filter_coeffs'}]
-        if self.n_jitter > 0:
-            groups.append({'params': [self.jitter_cos, self.jitter_sin], 'name': 'filter_jitter'})
-        return groups
+        return [{'params': [self.coeffs], 'name': 'filter_coeffs'}]
 
     def get_filter_values(self, n_points=100):
         with torch.no_grad():
@@ -186,7 +165,6 @@ class DirectFilter(nn.Module):
 def create_filter(order=8, init_type='uniform', config=None):
     poly_basis = config.get('poly', 'bernstein') if config else 'bernstein'
     activation = config.get('f_act', 'sigmoid') if config else 'sigmoid'
-    n_jitter = config.get('f_jitter', 0) if config else 0
     if poly_basis == 'direct':
         return DirectFilter(n_eigen=config.get('n_eigen', order), init_type=init_type, activation=activation)
-    return APSFilter(filter_order=order, init_filter_name=init_type, poly_basis=poly_basis, activation=activation, n_jitter=n_jitter)
+    return APSFilter(filter_order=order, init_filter_name=init_type, poly_basis=poly_basis, activation=activation)

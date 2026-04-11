@@ -4,7 +4,7 @@ import utils
 
 
 
-def train_spectral(validation_data, model, optimizer, batch_size=1000, f_reg=0.0, mse_weight=0.0, no_bpr=False):
+def train_spectral(validation_data, model, optimizer, batch_size=1000, f_reg=0.0, loss_type='bpr'):
     model.train()
     users_with_validation = [u for u, items in validation_data.items() if len(items) > 0]
     if len(users_with_validation) == 0:
@@ -48,17 +48,10 @@ def train_spectral(validation_data, model, optimizer, batch_size=1000, f_reg=0.0
         pos_scores = predicted[range(bs), pos_idx]
         neg_scores = predicted[range(bs), neg_idx]
 
-        # BPR ranking loss
-        if not no_bpr:
+        if loss_type == 'mse':
+            loss = ((pos_scores - 1.0) ** 2).mean() + (neg_scores ** 2).mean()
+        else:  # bpr
             loss = torch.nn.functional.softplus(neg_scores - pos_scores).mean()
-        else:
-            loss = torch.tensor(0.0, device=model.device)
-
-        # MSE: push positive scores toward 1, negative toward 0
-        if mse_weight > 0 or no_bpr:
-            w = mse_weight if mse_weight > 0 else 1.0
-            mse_loss = ((pos_scores - 1.0) ** 2).mean() + (neg_scores ** 2).mean()
-            loss = loss + w * mse_loss
 
         # Frequency-aware regularization: penalize abrupt changes in filter response
         if f_reg > 0:
