@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import os
 
 
 def apply_activation(x, act_type='sigmoid'):
@@ -36,6 +37,10 @@ def get_init_coefficients(init_type, order):
         return [_logit(v) for v in vals]
     elif init_type == 'rise':
         vals = 0.25 + 0.35 * t
+        return [_logit(v) for v in vals]
+    elif init_type == 'random':
+        rng = np.random.RandomState(int.from_bytes(os.urandom(4), 'big'))
+        vals = 0.2 + 0.6 * rng.rand(n)  # post-sigmoid range [0.2, 0.8]
         return [_logit(v) for v in vals]
     else:  # uniform
         return [0.0] * n
@@ -144,6 +149,10 @@ class DirectFilter(nn.Module):
             init_vals = np.array([_logit(v) for v in vals])
         elif init_type == 'butterworth':
             vals = 0.40 + 0.35 / (1.0 + (2.0 * t) ** 4)
+            init_vals = np.array([_logit(v) for v in vals])
+        elif init_type == 'random':
+            rng = np.random.RandomState(int.from_bytes(os.urandom(4), 'big'))
+            vals = 0.2 + 0.6 * rng.rand(n_eigen)  # post-sigmoid range [0.2, 0.8]
             init_vals = np.array([_logit(v) for v in vals])
         else:  # uniform
             init_vals = np.zeros(n_eigen)

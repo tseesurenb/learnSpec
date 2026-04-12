@@ -121,7 +121,8 @@ def evaluate(dataset, model, split='test', batch_size=1000):
 
 def evaluate_baseline(dataset, config):
     from model import LearnSpecCF
-    model = LearnSpecCF(dataset.UserItemNet, config, use_cache=True).to(config['device'])
+    verbose = config.get('quiet', 0) == 0
+    model = LearnSpecCF(dataset.UserItemNet, config, use_cache=True, verbose=verbose).to(config['device'])
     model.eval()
     with torch.no_grad():
         results = evaluate(dataset, model, split='test', batch_size=config['batch_size'])
