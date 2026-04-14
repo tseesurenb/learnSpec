@@ -78,16 +78,14 @@ class LearnSpecCF(nn.Module):
             n_eigen = self.item_eigenvecs.shape[1]
             # Estimate memory: result is n_users * n_eigen * 4 bytes
             result_bytes = n_users * n_eigen * 4
-            # Use chunked computation if result would exceed ~1.5 GiB
-            if result_bytes > 1.5e9:
-                # Chunk along eigenvector columns to avoid slicing sparse CSR rows
-                col_chunk = max(1, int(1.5e9 / (n_users * 4)))
-                parts = []
+            # Use chunked computation if result would exceed ~1 GiB
+            if result_bytes > 1e9:
+                # Pre-allocate result, fill column-chunks in-place to avoid peak memory spike
+                col_chunk = max(1, int(1e9 / (n_users * 4)))
+                spectral_R = torch.empty(n_users, n_eigen, dtype=torch.float32, device=self.device)
                 for start in range(0, n_eigen, col_chunk):
                     end = min(start + col_chunk, n_eigen)
-                    parts.append(R_csr @ self.item_eigenvecs[:, start:end])
-                spectral_R = torch.cat(parts, dim=1)
-                del parts
+                    spectral_R[:, start:end] = R_csr @ self.item_eigenvecs[:, start:end]
                 if self.verbose:
                     print(f"    Precomputed item spectral projection: R@V {spectral_R.shape} (chunked)")
             else:
