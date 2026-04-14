@@ -29,7 +29,7 @@ def parse_args():
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=1024)
     parser.add_argument('--patience', type=int, default=10)
-    parser.add_argument('--eval_every', type=int, default=20, help='Evaluate on validation set every N epochs')
+    parser.add_argument('--eval_every', type=int, default=10, help='Evaluate on validation set every N epochs')
     parser.add_argument('--infer', action='store_true', default=False)
     parser.add_argument('--save', action='store_true', default=False)
     parser.add_argument('--log', action='store_true', default=False, help='Log detailed filter state at each eval step')
