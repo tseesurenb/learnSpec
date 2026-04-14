@@ -74,10 +74,24 @@ class LearnSpecCF(nn.Module):
                 print(f"    Precomputed user spectral projection: U^T@R {spectral_R.shape}")
 
         if 'i' in self.view and hasattr(self, 'item_eigenvecs'):
-            spectral_R = R_csr @ self.item_eigenvecs
+            n_users = R_csr.shape[0]
+            n_eigen = self.item_eigenvecs.shape[1]
+            # Estimate memory: result is n_users * n_eigen * 4 bytes
+            result_bytes = n_users * n_eigen * 4
+            # Use chunked computation if result would exceed ~1.5 GiB
+            if result_bytes > 1.5e9:
+                chunk_size = max(1, int(1.5e9 / (n_eigen * 4)))
+                spectral_R = torch.empty(n_users, n_eigen, dtype=torch.float32, device=self.device)
+                for start in range(0, n_users, chunk_size):
+                    end = min(start + chunk_size, n_users)
+                    spectral_R[start:end] = R_csr[start:end] @ self.item_eigenvecs
+                if self.verbose:
+                    print(f"    Precomputed item spectral projection: R@V {spectral_R.shape} (chunked)")
+            else:
+                spectral_R = R_csr @ self.item_eigenvecs
+                if self.verbose:
+                    print(f"    Precomputed item spectral projection: R@V {spectral_R.shape}")
             self.register_buffer('item_spectral_R', spectral_R.contiguous())
-            if self.verbose:
-                print(f"    Precomputed item spectral projection: R@V {spectral_R.shape}")
 
         del R_csr
 
